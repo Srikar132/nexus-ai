@@ -1,28 +1,17 @@
-import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/home/app-sidebar";
 import Header from "@/components/home/header";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
-export default function HomeLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function HomeLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col h-screen">
-      {/* Header at top - full width */}
-      <Header />
-      
-      {/* Sidebar + Content below header */}
-      <div className="flex flex-1 overflow-hidden">
-        <SidebarProvider defaultOpen={true}>
-          <AppSidebar />
-          <main className="flex-1 overflow-auto">
-            <div className="container py-8">
-              {children}
-            </div>
-          </main>
-        </SidebarProvider>
-      </div>
-    </div>
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <Header />
+        <div className="flex flex-1 flex-col gap-4 p-4">
+          {children}
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

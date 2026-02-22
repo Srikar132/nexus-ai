@@ -12,6 +12,10 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/home", req.url));
   }
 
+  if(isPublicPage && isAuthenticated) {
+    return NextResponse.redirect(new URL("/home", req.url));
+  }
+
   // Redirect unauthenticated users to login for protected pages (all pages except home and login)
   if (!isAuthenticated && !isPublicPage) {
     return NextResponse.redirect(new URL("/login", req.url));
@@ -19,7 +23,6 @@ export default auth((req) => {
 
   // Check onboarding completion for authenticated users
   if (isAuthenticated && req.auth?.user) {
-    console.log("User onboarding status:", req.auth.user.onboardingCompleted);
     const onboardingCompleted = req.auth.user.onboardingCompleted;
     
     // If onboarding not completed and not on getting-started page, redirect to getting-started

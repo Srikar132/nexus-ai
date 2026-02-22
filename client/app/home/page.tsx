@@ -1,13 +1,7 @@
-
-
-"use client";
-
-import { useState } from "react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Mic, ArrowUp } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import { Rocket, Paperclip, Mic, TrendingUp, Clock, Activity } from "lucide-react";
 
 const quickStartItems = [
   "Todo App",
@@ -16,79 +10,61 @@ const quickStartItems = [
   "E-commerce Store",
 ];
 
-const stats = [
-  {
-    label: "TOTAL DEPLOYS",
-    value: "1,248",
-    icon: TrendingUp,
-    color: "text-green-500",
-  },
-  {
-    label: "AVG. BUILD TIME",
-    value: "2m 14s",
-    icon: Clock,
-    color: "text-blue-500",
-  },
-  {
-    label: "SYSTEM UPTIME",
-    value: "99.9%",
-    icon: Activity,
-    color: "text-purple-500",
-  },
-];
-
 const HomePage = () => {
-  const [prompt, setPrompt] = useState("");
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-2  flex-1">
       {/* Pipeline Status Badge */}
       <div className="flex justify-center pt-4">
         <Badge variant="secondary" className="gap-2 px-4 py-1.5">
-          <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+          <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
           <span className="text-xs font-medium">PIPELINE ACTIVE</span>
         </Badge>
       </div>
 
       {/* Main Heading */}
       <div className="text-center space-y-4">
-        <h1 className="text-5xl font-bold">
+        <h1 className="text-3xl font-bold">
           What do you want to{" "}
           <span className="gradient-text">ship today?</span>
         </h1>
-        <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+        <p className="text-muted-foreground text-sm max-w-2xl mx-auto">
           Describe your vision. Our autonomous agents will architect, build, and
           deploy your full-stack application instantly.
         </p>
       </div>
 
       {/* Input Card */}
-      <Card className="border-border/50 bg-card/50 backdrop-blur">
-        <CardContent className="p-6 space-y-4">
-          <Textarea
-            placeholder="E.g., Build a SaaS dashboard for tracking crypto portfolio with real-time charts and Stripe subscription integration..."
-            className="min-h-[120px] resize-none border-0 bg-transparent text-base focus-visible:ring-0 focus-visible:ring-offset-0"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-          />
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Paperclip className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Mic className="h-4 w-4" />
-              </Button>
+      <div className="w-full max-w-3xl mx-auto">
+        <div className="flex items-center gap-3 bg-muted/50 rounded-full px-4 py-3 border border-border/50">
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted">
+            <div className="w-4 h-4 flex items-center justify-center">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
             </div>
-
-            <Button className="custom-gradient text-white gap-2">
-              <Rocket className="h-4 w-4" />
-              Start Build
+          </Button>
+          
+          <Textarea
+            placeholder="Ask anything"
+            rows={3}
+            className="flex-1 bg-transparent border-0 outline-none text-base placeholder:text-muted-foreground resize-none overflow-y-auto max-h-[4.5rem] min-h-[1.5rem] scrollbar-none"
+            style={{
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none'
+            }}
+          />
+          
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted">
+              <Mic className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full bg-gray-500 hover:bg-green-600">
+              <ArrowUp className="h-4 w-4" />
             </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Quick Start Templates */}
       <div className="flex items-center justify-center gap-3 flex-wrap">
@@ -98,7 +74,6 @@ const HomePage = () => {
             variant="secondary"
             size="sm"
             className="rounded-full"
-            onClick={() => setPrompt(`Build a ${item}`)}
           >
             {item}
           </Button>

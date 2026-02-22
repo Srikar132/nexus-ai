@@ -32,7 +32,9 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrainsMono.variable} antialiased dark`}
       >
         <SessionProvider>
-          <TooltipProvider>{children}</TooltipProvider>
+            <TooltipProvider>
+              {children}
+            </TooltipProvider>
         </SessionProvider>
       </body>
     </html>

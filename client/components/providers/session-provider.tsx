@@ -1,3 +1,4 @@
+import { auth } from "@/lib/auth";
 import { SessionProvider as NextAuthSessionProvider } from "next-auth/react";
 import { ReactNode } from "react";
 
@@ -9,6 +10,7 @@ interface SessionProviderProps {
  * Client-side session provider that wraps the app
  * Provides authentication context to all client components
  */
-export function SessionProvider({ children }: SessionProviderProps) {
-  return <NextAuthSessionProvider>{children}</NextAuthSessionProvider>;
+export async function SessionProvider({ children }: SessionProviderProps) {
+  const session = await auth();
+  return <NextAuthSessionProvider session={session}>{children}</NextAuthSessionProvider>;
 }
