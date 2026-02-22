@@ -3,9 +3,15 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
-    # Clerk
-    CLERK_SECRET_KEY: str
-    CLERK_PUBLISHABLE_KEY: str
+    # Clerk (keeping for backward compatibility)
+    CLERK_SECRET_KEY: Optional[str] = None
+    CLERK_PUBLISHABLE_KEY: Optional[str] = None
+    
+    # NextAuth JWT
+    NEXTAUTH_SECRET: str
+    
+    # Encryption for GitHub tokens
+    ENCRYPTION_KEY: str
     
     # Database
     DATABASE_URL: str

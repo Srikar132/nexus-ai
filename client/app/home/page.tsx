@@ -1,83 +1,82 @@
-import { Button } from "@/components/ui/button";
+
 import { Badge } from "@/components/ui/badge";
-import { Mic, ArrowUp } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import PromptInput from "@/components/prompt-input";
+import { Zap } from "lucide-react";
 
 const quickStartItems = [
-  "Todo App",
-  "Blog Platform",
-  "CRM Dashboard",
-  "E-commerce Store",
+  { label: "Todo App", icon: "✓" },
+  { label: "Blog Platform", icon: "✍" },
+  { label: "CRM Dashboard", icon: "📊" },
+  { label: "E-commerce Store", icon: "🛒" },
 ];
 
 const HomePage = () => {
-
   return (
-    <div className="max-w-4xl mx-auto space-y-2  flex-1">
-      {/* Pipeline Status Badge */}
-      <div className="flex justify-center pt-4">
-        <Badge variant="secondary" className="gap-2 px-4 py-1.5">
-          <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
-          <span className="text-xs font-medium">PIPELINE ACTIVE</span>
+    <div className="tech-grid flex flex-col max-h-full overflow-hidden items-center justify-center flex-1 w-full px-4 py-16 gap-10">
+      {/* Pipeline Badge */}
+      <div className="flex justify-center">
+        <Badge
+          variant="secondary"
+          className="gap-2 px-4 py-1.5 rounded-full border border-border/60 bg-muted/60 backdrop-blur-sm"
+        >
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-60" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+          </span>
+          <span className="text-xs font-semibold tracking-widest uppercase text-muted-foreground">
+            Pipeline Active
+          </span>
         </Badge>
       </div>
 
-      {/* Main Heading */}
-      <div className="text-center space-y-4">
-        <h1 className="text-3xl font-bold">
+      {/* Heading */}
+      <div className="text-center space-y-4 max-w-2xl">
+        <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.15]">
           What do you want to{" "}
           <span className="gradient-text">ship today?</span>
         </h1>
-        <p className="text-muted-foreground text-sm max-w-2xl mx-auto">
+        {/* <p className="text-muted-foreground text-base leading-relaxed max-w-lg mx-auto">
           Describe your vision. Our autonomous agents will architect, build, and
           deploy your full-stack application instantly.
-        </p>
+        </p> */}
       </div>
 
-      {/* Input Card */}
-      <div className="w-full max-w-3xl mx-auto">
-        <div className="flex items-center gap-3 bg-muted/50 rounded-full px-4 py-3 border border-border/50">
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted">
-            <div className="w-4 h-4 flex items-center justify-center">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </div>
-          </Button>
-          
-          <Textarea
-            placeholder="Ask anything"
-            rows={3}
-            className="flex-1 bg-transparent border-0 outline-none text-base placeholder:text-muted-foreground resize-none overflow-y-auto max-h-[4.5rem] min-h-[1.5rem] scrollbar-none"
-            style={{
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none'
-            }}
-          />
-          
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted">
-              <Mic className="h-4 w-4" />
+      {/* Input */}
+      <div className="w-full max-w-2xl">
+        <PromptInput />
+      </div>
+
+      {/* Quick Start */}
+      <div className="flex flex-col items-center gap-3">
+        <p className="text-xs text-muted-foreground/60 tracking-wider uppercase font-medium">
+          Quick start
+        </p>
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          {quickStartItems.map((item) => (
+            <Button
+              key={item.label}
+              variant="secondary"
+              size="sm"
+              className="
+                rounded-full border border-border/60 bg-muted/50
+                hover:bg-muted hover:border-border
+                text-muted-foreground hover:text-foreground
+                gap-1.5 text-sm transition-all duration-200
+                hover:scale-[1.02] active:scale-[0.98]
+              "
+            >
+              <span className="text-xs">{item.icon}</span>
+              {item.label}
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full bg-gray-500 hover:bg-green-600">
-              <ArrowUp className="h-4 w-4" />
-            </Button>
-          </div>
+          ))}
         </div>
       </div>
 
-      {/* Quick Start Templates */}
-      <div className="flex items-center justify-center gap-3 flex-wrap">
-        {quickStartItems.map((item) => (
-          <Button
-            key={item}
-            variant="secondary"
-            size="sm"
-            className="rounded-full"
-          >
-            {item}
-          </Button>
-        ))}
+      {/* Footer hint */}
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground/40">
+        <Zap className="h-3 w-3" />
+        <span>Powered by autonomous AI agents</span>
       </div>
     </div>
   );

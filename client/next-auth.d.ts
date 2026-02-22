@@ -40,7 +40,6 @@ declare module "next-auth/jwt" {
    * Extended JWT interface - only essential fields stored in token
    */
   interface JWT extends DefaultJWT {
-    accessToken?: string;
     id: string;
     email: string;
     username?: string;

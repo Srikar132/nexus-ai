@@ -19,12 +19,19 @@ DATABASE_URL =  settings.DATABASE_URL.replace(
 engine = create_async_engine(
     DATABASE_URL,
     echo=True,  # disable in production
+    pool_size=10,  # Number of connections to keep in the pool
+    max_overflow=20,  # Max connections beyond pool_size
+    pool_pre_ping=True,  # Verify connections before using them
+    pool_recycle=3600,  # Recycle connections after 1 hour
 )
 
 # Create async session factory
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
     expire_on_commit=False,
+    class_=AsyncSession,
+    autoflush=False,
+    autocommit=False,
 )
 
 # Base class for models

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, TIMESTAMP
+from sqlalchemy import Column, String, Integer, TIMESTAMP, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -16,6 +16,9 @@ class User(Base):
     github_id = Column(String(255), unique=True, nullable=False)
     email = Column(String(255), nullable=True)
     username = Column(String(100), nullable=False)
+    
+    # Store encrypted GitHub token for future API calls
+    github_token_encrypted = Column(Text, nullable=True)
 
     # user's preferences
     preferred_stack = Column(String(100), nullable=True)        # -- nextjs, fastapi, node, etc.

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { Infinity, Bell } from "lucide-react";
+import {  Bell } from "lucide-react";
 import Link from "next/link";
 
 export default async function Header() {
@@ -33,7 +33,7 @@ export default async function Header() {
           {/* User Profile */}
           {session?.user && (
             <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary">
                 <span className="text-sm font-medium">
                   {(session.user.username || session.user.email || "U").charAt(0).toUpperCase()}
                 </span>

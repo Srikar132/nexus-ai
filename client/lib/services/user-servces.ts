@@ -1,5 +1,5 @@
-import { apiClient } from "@/lib/api-client";
 import { CreateUserData, UpdateUserData, User } from "@/types/user";
+import { fetchAPI } from "../fetch-api";
 
 /**
  * User service for managing user data
@@ -11,8 +11,16 @@ const userServices = {
    * POST /api/v1/users/signin
    */
   signIn: async (data: CreateUserData): Promise<User> => {
-    const response = await apiClient.post<User>("/api/v1/users/signin", data);
-    return response.data;
+    const response = await fetchAPI<User>("/api/v1/users/signin", {
+      method: 'POST',
+      body: data,
+    });
+    
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    
+    return response.data!;
   },
 
   /**
@@ -20,20 +28,33 @@ const userServices = {
    * GET /api/v1/users/me
    */
   getUser: async (): Promise<User> => {
-    const response = await apiClient.get<User>("/api/v1/users/me");
-    return response.data;
+    const response = await fetchAPI<User>("/api/v1/users/me", {
+      method: 'GET',
+    });
+    
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    
+    return response.data!;
   },
 
   /**
-   * Update user data (onboarding, preferences, etc.)
-   * PATCH /api/v1/users/:id
+   * Complete user onboarding
+   * POST /api/v1/users/onboarding/complete
    */
   completeOnboarding: async (data: UpdateUserData): Promise<User> => {
-    const response = await apiClient.post<User>(`/api/v1/users/onboarding/complete`, data);
-    return response.data;
+    const response = await fetchAPI<User>("/api/v1/users/onboarding/complete", {
+      method: 'POST',
+      body: data,
+    });
+    
+    if (response.error) {
+      throw new Error(response.error);
+    }
+    
+    return response.data!;
   },
-
-
 };
 
 export default userServices;

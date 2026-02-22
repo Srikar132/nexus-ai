@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { SessionProvider } from "@/components/providers/session-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
 const inter = Inter({
@@ -29,13 +30,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${jetbrainsMono.variable} antialiased dark`}
+        className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
       >
-        <SessionProvider>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+          <SessionProvider>
             <TooltipProvider>
               {children}
             </TooltipProvider>
-        </SessionProvider>
+          </SessionProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -19,14 +19,9 @@ import {
   Home,
   Folder,
   Settings,
-  User,
   PlusCircle,
-  BarChart3,
-  FileText,
   Bell,
   Search,
-  Calendar,
-  MessageSquare,
   Command,
 } from "lucide-react"
 
@@ -64,7 +59,7 @@ const data = {
   settings: [
     {
       name: "Settings",
-      url: "/settings",
+      url: "/home/settings/general",
       icon: Settings,
     },  
   ],
@@ -73,8 +68,8 @@ const data = {
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
 
-  return (
-    <Sidebar collapsible="icon" {...props}>
+return (
+    <Sidebar collapsible="icon" {...props} >
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>

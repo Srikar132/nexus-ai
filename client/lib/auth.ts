@@ -21,14 +21,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
          */
         async jwt({ token, user, account, trigger, session }): Promise<JWT> {
             if (account && user) {
-                token.accessToken = account.access_token;
                 token.id = user.id;
                 token.email = user.email;
                 token.username = user.username;
                 token.onboardingCompleted = user.onboardingCompleted;
             }
 
-            if (session?.onboardingCompleted !== undefined) {
+            // Handle session updates (like onboarding completion)
+            if (trigger === "update" && session?.onboardingCompleted !== undefined) {
                 token.onboardingCompleted = session.onboardingCompleted;
             }
 
@@ -37,17 +37,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         /**
          * Session callback - runs when session is checked
+         * The session object should NOT contain the GitHub access token
+         * We'll get the NextAuth JWT token separately in the API client
          */
         async session({ session, token }): Promise<Session> {
-            if (token.accessToken) {
-                session.accessToken = token.accessToken as string;
-            }
-
             if (session.user) {
                 session.user.id = token.id as string;
                 session.user.email = token.email as string;
                 session.user.username = token.username as string | undefined;
                 session.user.onboardingCompleted = token.onboardingCompleted as boolean;
+                
+                // DO NOT include GitHub access token in session
+                // The NextAuth JWT token itself will be used for backend auth
             }
 
             return session;
@@ -55,6 +56,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         /**
          * SignIn callback - called server-side, must use plain fetch (not axios/getSession)
+         * This still uses GitHub token for initial user creation/verification
          */
         async signIn({ user, account }) {
             if (account?.provider === "github") {
@@ -79,11 +81,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
                     const dbUser = await res.json();
 
+                    
                     // Attach backend user data to the user object for JWT
-                    user.id = dbUser.id;
+                    user.id = dbUser.id; // Database user ID
                     user.email = dbUser.email;
                     user.username = dbUser.username;
-                    user.onboardingCompleted = dbUser.onboardingCompleted === 1;
+                    user.onboardingCompleted = dbUser.onboarding_completed === 1;
+                    // Add GitHub ID as a custom property
 
                     return true;
                 } catch (error) {
@@ -100,4 +104,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     session: {
         strategy: "jwt",
     },
+    // Ensure JWT secret matches what we use in the backend
+    secret: process.env.AUTH_SECRET,
 });
