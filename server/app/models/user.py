@@ -1,6 +1,7 @@
 from sqlalchemy import Column, String, Integer, TIMESTAMP, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 import uuid
 
 from app.core.database import Base
@@ -39,3 +40,6 @@ class User(Base):
         server_default=func.now(),
         onupdate=func.now()
     )
+
+    # Relationships
+    projects = relationship("Project", back_populates="user")

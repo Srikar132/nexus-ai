@@ -1,63 +1,51 @@
 /**
  * Project types matching the backend SQLAlchemy Project model
+ * and ProjectResponse schema
  */
-
-export type ProjectStatus = "initializing" | "building" | "deployed" | "failed";
-export type TargetFramework = "fastapi" | "flask" | "express" | "nextjs" | "django";
-export type TargetLanguage = "python" | "javascript" | "typescript" | "go" | "rust";
 
 export interface Project {
   id: string; // UUID
   name: string;
   description?: string | null;
-  slug: string;
   
-  // Configuration
-  targetFramework?: string | null;
-  targetLanguage?: string | null;
+  // Status and metadata
+  status: string; // "active" | "deleted" etc.
+  stack?: Record<string, any> | null;
   
-  // Status and build info
-  status: ProjectStatus;
-  totalBuilds: number;
-  successfulBuilds: number;
-  failedBuilds: number;
+  // Git & Deployment
+  repo_url?: string | null;
+  latest_deploy_url?: string | null;
   
-  // Deployment info
-  latestDeployedUrl?: string | null;
-  
-  // Git integration
-  gitRepoUrl?: string | null;
-  gitBranch?: string;
+  // LangGraph integration
+  langgraph_thread_id?: string | null;
   
   // Timestamps
-  createdAt: string; // ISO date string
-  updatedAt: string; // ISO date string
-  lastDeployedAt?: string | null; // ISO date string
+  created_at: string; // ISO date string
+  updated_at: string; // ISO date string
 }
 
 /**
- * Create project form data
+ * Create project form data — matches ProjectCreate schema
  */
 export interface CreateProjectData {
-  name?: string | null;
+  name: string;
   description?: string | null;
-  targetFramework?: string | null;
-  targetLanguage?: string | null;
-  userPrompt?: string | null;
 }
 
 /**
- * Update project data
+ * Update project data — matches ProjectUpdate schema
  */
 export interface UpdateProjectData {
   name?: string;
   description?: string;
-  targetFramework?: string;
-  targetLanguage?: string;
+  status?: string;
+  stack?: Record<string, any>;
+  repo_url?: string;
+  latest_deploy_url?: string;
 }
 
 /**
- * Paginated project list response
+ * Paginated project list response — matches ProjectListResponse schema
  */
 export interface ProjectListResponse {
   projects: Project[];
@@ -72,5 +60,4 @@ export interface ProjectListResponse {
 export interface ProjectListParams {
   page?: number;
   limit?: number;
-  status?: ProjectStatus;
 }

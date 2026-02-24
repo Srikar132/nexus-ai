@@ -68,7 +68,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     // IMPORTANT: Use plain fetch here.
                     // This callback runs server-side — axios interceptors that call
                     // getSession() (a client-only API) will throw an error.
-                    const apiUrl = process.env.API_URL || "http://127.0.0.1:8000";
+                    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
                     const res = await fetch(`${apiUrl}/api/v1/users/signin`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -81,7 +81,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
                     const dbUser = await res.json();
 
-                    
                     // Attach backend user data to the user object for JWT
                     user.id = dbUser.id; // Database user ID
                     user.email = dbUser.email;

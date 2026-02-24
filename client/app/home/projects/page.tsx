@@ -121,7 +121,7 @@ const ProjectsPage = async () => {
                 <TableHead>Name</TableHead>
                 <TableHead>Framework</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Builds</TableHead>
+                <TableHead>Info</TableHead>
                 <TableHead>Last Updated</TableHead>
                 <TableHead>Deployed Link</TableHead>
               </TableRow>
@@ -132,21 +132,21 @@ const ProjectsPage = async () => {
                   <TableRow key={project.id} className="cursor-pointer">
                     <TableCell>
                       <Link href={`/project/${project.id}`} className="flex items-center gap-2 w-full">
-                        <div className="w-6 h-6 bg-orange-500 rounded-sm flex items-center justify-center">
+                        <div className="w-6 h-6 bg-primary rounded-sm flex items-center justify-center">
                           <span className="text-xs font-bold text-white">
                             {project.name.charAt(0).toUpperCase()}
                           </span>
                         </div>
                         <div>
                           <div className="font-medium">{project.name}</div>
-                          <div className="text-xs text-muted-foreground">{project.slug}</div>
+                          <div className="text-xs text-muted-foreground">{project.description || ''}</div>
                         </div>
                       </Link>
                     </TableCell>
                     <TableCell>
                       <Link href={`/project/${project.id}`} className="block w-full">
                         <Badge variant="outline" className="text-xs">
-                          {project.targetFramework?.trim() || 'Unknown'}
+                          {project.stack?.framework || 'Unknown'}
                         </Badge>
                       </Link>
                     </TableCell>
@@ -154,9 +154,8 @@ const ProjectsPage = async () => {
                       <Link href={`/project/${project.id}`} className="block w-full">
                         <Badge 
                           variant={
-                            project.status === 'deployed' ? 'default' :
-                            project.status === 'building' ? 'secondary' :
-                            project.status === 'failed' ? 'destructive' :
+                            project.status === 'active' ? 'default' :
+                            project.status === 'deleted' ? 'destructive' :
                             'outline'
                           }
                           className="text-xs"
@@ -167,24 +166,21 @@ const ProjectsPage = async () => {
                     </TableCell>
                     <TableCell>
                       <Link href={`/project/${project.id}`} className="block w-full">
-                        <div className="text-sm">
-                          <div className="font-medium">{project.totalBuilds || 0} total</div>
-                          <div className="text-xs text-muted-foreground">
-                            {project.successfulBuilds || 0} success, {project.failedBuilds || 0} failed
-                          </div>
+                        <div className="text-sm text-muted-foreground">
+                          —
                         </div>
                       </Link>
                     </TableCell>
                     <TableCell>
                       <Link href={`/project/${project.id}`} className="block w-full">
                         <div className="text-sm text-muted-foreground">
-                          {new Date(project.updatedAt).toLocaleDateString('en-US', {
+                          {new Date(project.updated_at).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric'
                           })}
                           <div className="text-xs">
-                            {new Date(project.updatedAt).toLocaleTimeString('en-US', {
+                            {new Date(project.updated_at).toLocaleTimeString('en-US', {
                               hour: 'numeric',
                               minute: '2-digit',
                               hour12: true
@@ -195,14 +191,14 @@ const ProjectsPage = async () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-between">
-                        {!project.latestDeployedUrl && (
+                        {!project.latest_deploy_url && (
                           <Link href={`/project/${project.id}`} className="flex-1">
                             <span className="text-xs text-muted-foreground">Not deployed</span>
                           </Link>
                         )}
-                        {project.latestDeployedUrl && (
+                        {project.latest_deploy_url && (
                             <Link
-                              href={project.latestDeployedUrl} 
+                              href={project.latest_deploy_url} 
                               target="_blank" 
                               rel="noopener noreferrer"
                               className="flex items-center gap-2"

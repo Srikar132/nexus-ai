@@ -14,7 +14,7 @@ import {
 const projectServices = {
   /**
    * Create a new project
-   * POST /api/v1/projects
+   * POST /api/v1/projects/
    */
   createProject: async (data: CreateProjectData): Promise<Project> => {
     const response = await fetchAPI<Project>("/api/v1/projects", {
@@ -31,14 +31,13 @@ const projectServices = {
 
   /**
    * Get all projects for the current user with pagination
-   * GET /api/v1/projects
+   * GET /api/v1/projects/
    */
   getProjects: async (params: ProjectListParams = {}): Promise<ProjectListResponse> => {
     const queryParams: Record<string, string> = {};
     
     if (params.page) queryParams.page = params.page.toString();
     if (params.limit) queryParams.limit = params.limit.toString();
-    if (params.status) queryParams.status = params.status;
 
     const response = await fetchAPI<ProjectListResponse>("/api/v1/projects", {
       method: "GET",
@@ -97,38 +96,6 @@ const projectServices = {
     if (response.error) {
       throw new Error(response.error);
     }
-  },
-
-  /**
-   * Get project build history (placeholder for future implementation)
-   * GET /api/v1/projects/:id/builds
-   */
-  getProjectBuilds: async (projectId: string): Promise<any[]> => {
-    const response = await fetchAPI<any[]>(`/api/v1/projects/${projectId}/builds`, {
-      method: "GET",
-    });
-    
-    if (response.error) {
-      throw new Error(response.error);
-    }
-    
-    return response.data || [];
-  },
-
-  /**
-   * Trigger a new build for the project (placeholder for future implementation)
-   * POST /api/v1/projects/:id/builds
-   */
-  triggerBuild: async (projectId: string): Promise<any> => {
-    const response = await fetchAPI<any>(`/api/v1/projects/${projectId}/builds`, {
-      method: "POST",
-    });
-    
-    if (response.error) {
-      throw new Error(response.error);
-    }
-    
-    return response.data!;
   },
 };
 

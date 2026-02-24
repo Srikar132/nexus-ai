@@ -85,7 +85,8 @@ function PromptInput() {
 
     try {
       const project = await projectServices.createProject({
-        userPrompt: prompt,
+        name: prompt.slice(0, 100),
+        description: prompt,
       });
 
       // Store the prompt in localStorage with the project ID as the key

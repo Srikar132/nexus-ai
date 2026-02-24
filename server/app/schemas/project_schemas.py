@@ -4,33 +4,38 @@ from datetime import datetime
 from uuid import UUID
 
 
-class CreateProject(BModel):
-    name: str | None = None
+class ProjectCreate(BModel):
+    """Schema for creating a new project."""
+    name: str
     description: str | None = None
 
-    target_framework: str | None = None  # fastapi, flask, express
-    target_language: str | None = None  # python, javascript, go
 
-    user_prompt: str | None = None
+class ProjectUpdate(BModel):
+    """Schema for updating project fields."""
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None
+    stack: dict | None = None
+    repo_url: str | None = None
+    latest_deploy_url: str | None = None
 
 
 class ProjectResponse(BModel):
+    """Schema for project response."""
     id: UUID
     name: str
     description: Optional[str] = None
-    slug: str
     
-    target_framework: Optional[str] = None
-    target_language: Optional[str] = None
+    # Status and metadata
+    status: str  # active, deleted, etc.
+    stack: Optional[dict] = None
     
-    # Status and build info
-    status: str  # initializing, building, deployed
-    total_builds: int
-    successful_builds: int
-    failed_builds: int
+    # Git & Deployment
+    repo_url: Optional[str] = None
+    latest_deploy_url: Optional[str] = None
     
-    # Deployment info
-    latest_deployed_url: Optional[str] = None
+    # LangGraph integration
+    langgraph_thread_id: Optional[str] = None
     
     # Timestamps
     created_at: datetime
@@ -41,7 +46,16 @@ class ProjectResponse(BModel):
 
 
 class ProjectListResponse(BModel):
+    """Schema for paginated project list response."""
     projects: List[ProjectResponse]
     total: int
     page: int
     limit: int
+
+
+class SendMessageResponse(BModel):
+    """Schema for send message response."""
+    user_message_id: UUID
+    thread_id: str
+    status: str
+    stream_url: str

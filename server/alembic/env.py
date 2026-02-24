@@ -12,6 +12,10 @@ from app.core.config import settings
 
 # Import all models here so Alembic can detect them
 from app.models import user  # noqa: F401
+from app.models import project  # noqa: F401
+from app.models import message  # noqa: F401
+from app.models import build  # noqa: F401
+from app.models import artifact  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

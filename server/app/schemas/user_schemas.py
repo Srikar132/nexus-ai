@@ -14,6 +14,14 @@ class OnboardingCompleteRequest(BModel):
     developer_level: Literal["beginner", "intermediate", "advanced", "founder"] = Field("beginner", description="User's developer level")
 
 
+class UserUpdate(BModel):
+    """Schema for updating user fields"""
+    username: str | None = Field(None, description="User's username")
+    preferred_stack: str | None = Field(None, description="User's preferred tech stack (e.g., nextjs, fastapi)")
+    preferred_language: str | None = Field(None, description="User's preferred programming language (e.g., python, typescript)")
+    developer_level: Literal["beginner", "intermediate", "advanced", "founder"] | None = Field(None, description="User's developer level")
+
+
 
 
 class UserResponse(BModel):

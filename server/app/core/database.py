@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import declarative_base
 from app.core.config import settings    
-# Dependency for FastAPI routes
 from typing import AsyncGenerator
 
 
@@ -39,12 +38,19 @@ Base = declarative_base()
 
 # Import models here so SQLAlchemy knows about them
 from app.models import user  # noqa: E402
+from app.models import project  # noqa: E402
+from app.models import message  # noqa: E402
+from app.models import build  # noqa: E402
+from app.models import artifact  # noqa: E402
 
-async def init_db():
+async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     print("✅ Database tables created successfully!")
+
+async def close_db() -> None:
+    await engine.dispose()
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
