@@ -28,8 +28,9 @@ export interface Project {
  * Create project form data — matches ProjectCreate schema
  */
 export interface CreateProjectData {
-  name: string;
+  name?: string | null;
   description?: string | null;
+  userPrompt?: string | null;
 }
 
 /**

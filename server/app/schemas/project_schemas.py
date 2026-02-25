@@ -6,10 +6,9 @@ from uuid import UUID
 
 class ProjectCreate(BModel):
     """Schema for creating a new project."""
-    name: str
+    name: str | None = None
     description: str | None = None
-    
-    user_prompt : str | None = None
+    user_prompt: str  # Make this required since we need it to generate name/description
 
 
 class ProjectUpdate(BModel):

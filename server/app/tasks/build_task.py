@@ -36,6 +36,7 @@ from datetime import datetime
 from celery import Celery
 from langgraph.types import Command
 from app.core.config import settings
+from app.schemas.enums import MessageType
 # from app.models import User, Project, Build, Message, Artifact
 
 log = logging.getLogger(__name__)
@@ -177,34 +178,31 @@ def _finalise_build(db, state: dict):
 
 def _publish_connect_railway(project_id: str, build_id: str):
     """
-    Emit connect_railway event directly via Redis.
+    Emit connect_railway artifact via Redis (flat shape matching frontend).
     Called when deployer needs Railway key but user hasn't set it yet.
     Does NOT resume the graph — graph stays paused at deployer interrupt.
     """
-    import uuid
+    import json
     from app.core.redis import publish
 
-    temp_id = str(uuid.uuid4())
+    content = json.dumps({
+        "build_id": build_id,
+        "status":   "waiting_for_railway_key",
+        "message":  (
+            "🚂 Almost there! Your app is built and security-tested.\n\n"
+            "To deploy, connect your Railway account once.\n"
+            "Future deployments are fully automatic — you'll never be asked again.\n\n"
+            "Get your token: railway.app → Account Settings → Tokens"
+        ),
+    })
+
     publish(project_id, {
         "type":          "artifact",
-        "artifact_id":   temp_id,
-        "artifact_data": {
-            "artifact_type": "connect_railway",
-            "title":         "Connect Railway to Deploy",
-            "content": {
-                "build_id": build_id,
-                "status":   "waiting_for_railway_key",
-                "message":  (
-                    "🚂 Almost there! Your app is built and security-tested.\n\n"
-                    "To deploy, connect your Railway account once.\n"
-                    "Future deployments are fully automatic — you'll never be asked again.\n\n"
-                    "Get your token: railway.app → Account Settings → Tokens"
-                ),
-            },
-        },
-        "role": "system",
+        "artifact_type": "connect_railway",
+        "title":         "Connect Railway to Deploy",
+        "content":       content,
     })
-    publish(project_id, {"type": "done", "waiting_for": "railway_key"})
+    publish(project_id, {"type": "done"})
     log.info("Emitted connect_railway for project=%s build=%s", project_id, build_id)
 
 # ═══════════════════════════════════════════════════════════════════
@@ -218,6 +216,7 @@ def start_workflow_task(
     project_id:          str,
     thread_id:           str,
     user_message:        str,
+    message_type:        str,  # MessageType value (str enum is JSON-safe)
     project_name:        str,
     project_description: str,
 ):
@@ -234,7 +233,10 @@ def start_workflow_task(
             "project_name":         project_name,
             "project_description":  project_description,
             "chat_history":         [],
-            "current_user_input":   {"message": user_message, "message_type": "chat"},
+            "current_user_input":   {
+                "message":      user_message,
+                "message_type": message_type,
+            },
             "current_plan":         None,
             "approved_plan":        None,
             "app_url":              None,
@@ -287,7 +289,8 @@ def resume_workflow_task(
     project_id:   str,
     thread_id:    str,
     user_message: str,
-    message_type: str,
+    message_type: str,  # MessageType value (str enum is JSON-safe)
+    edited_plan:  dict = None,
 ):
     from app.core.redis import publish
 
@@ -303,7 +306,7 @@ def resume_workflow_task(
         state      = dict(snap.values)
         next_nodes = list(snap.next or [])
 
-        # Guard: build already running
+        # Guard: build already running — only conductor accepts user input
         waiting_at_conductor = (not next_nodes or "conductor" in next_nodes)
         if not waiting_at_conductor:
             publish(project_id, {
@@ -311,11 +314,11 @@ def resume_workflow_task(
                 "chunk": "🔨 Build is running — please wait until it completes.\n",
                 "role":  "conductor",
             })
-            publish(project_id, {"type": "done", "waiting_for": "build_complete"})
+            publish(project_id, {"type": "done"})
             return
 
-        # Create build row on approval
-        if message_type == "approval":
+        # Create build row on approval (before resuming graph)
+        if message_type == MessageType.APPROVAL:
             current_plan = state.get("current_plan")
             if not current_plan:
                 publish(project_id, {
@@ -323,7 +326,7 @@ def resume_workflow_task(
                     "chunk": "⚠️ No plan to approve yet.\n",
                     "role":  "conductor",
                 })
-                publish(project_id, {"type": "done", "waiting_for": "user_input"})
+                publish(project_id, {"type": "done"})
                 return
 
             if not state.get("build_id"):
@@ -331,8 +334,16 @@ def resume_workflow_task(
                 wf.update_state(config, {"build_id": build_id})
                 log.info("Build created project=%s build=%s", project_id, build_id)
 
+        # ── Build the resume payload — this becomes current_user_input in GraphState
+        resume_payload = {
+            "message":      user_message,
+            "message_type": message_type,
+        }
+        if message_type == MessageType.EDIT_PLAN and edited_plan:
+            resume_payload["edited_plan"] = edited_plan
+
         for _ in wf.stream(
-            Command(resume={"message": user_message, "message_type": message_type}),
+            Command(resume=resume_payload),
             config=config,
         ):
             pass
@@ -465,7 +476,7 @@ def deploy_confirm_task(
                 "chunk": "❌ GitHub account not connected. Please reconnect via GitHub login.\n",
                 "role":  "system",
             })
-            publish(project_id, {"type": "done", "waiting_for": "github_reconnect"})
+            publish(project_id, {"type": "done"})
             return
 
         # Railway key — check BEFORE resuming graph

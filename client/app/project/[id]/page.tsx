@@ -11,16 +11,16 @@ const ProjectPage = async ({
   try {
     const { id } = await params;
 
-    // const project = await projectServices.getProject(id);
+    const project = await projectServices.getProject(id);
+
+
 
 
     return (
-      <main>
-        <h1>Project Details</h1>
-        <p>Information about the project will be displayed here.</p>
-        <p className="text-sm text-muted-foreground mt-2">
-          Project ID: {id}
-        </p>
+      <main className="w-screen h-screen p-8 overflow-hidden">
+        <div className={"flex flex-col w-full h-full border border-red-500"}>
+
+        </div>
       </main>
     );
   } catch (error) {
@@ -32,7 +32,6 @@ const ProjectPage = async ({
       </main>
     );
   }
-
 };
 
 export default ProjectPage;

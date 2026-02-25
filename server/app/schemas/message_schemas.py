@@ -1,4 +1,5 @@
 from .base import BModel
+from .enums import UserAction
 from typing import List, Optional
 from datetime import datetime
 from uuid import UUID
@@ -42,5 +43,22 @@ class MessageListResponse(BModel):
 
 
 class SendMessageRequest(BModel):
-    """Schema for sending a message."""
-    content: str
+    """
+    Schema for sending a user action.
+
+    The frontend sends an explicit `action` field — the backend NEVER infers
+    intent from text content.  This is the contract:
+
+      action              | content     | edited_plan | vars
+      ─────────────────────┼─────────────┼─────────────┼─────────────
+      request_plan        | required    |             |
+      direct_build        | required    |             |
+      approve_plan        | optional "" |             |
+      edit_plan           | optional "" | required    |
+      send_message        | required    |             |
+      provide_env_vars    |             |             | required
+    """
+    action: UserAction
+    content: Optional[str] = ""
+    edited_plan: Optional[dict] = None  # Only for edit_plan action
+    vars: Optional[dict] = None  # Only for provide_env_vars action

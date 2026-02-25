@@ -27,19 +27,31 @@ class ProjectRepo:
         Create a new project.
         """
         
-        if not name and not description:
-            llm = get_llm("llama-3.1-70b")
+        if not name and not description and user_prompt:
+            try:
+                llm = get_llm("llama-3.1-8b")
 
-            response = llm.chat(
-                messages=[
-                    {"role": "user", "content": f"Create a project name and description based on this user prompt: '{user_prompt}'. Return only a JSON object with 'name' and 'description' fields. Example: {{\"name\": \"Project Name\", \"description\": \"Project description\"}}"}
-                ]
-            )
+                response = llm.chat(
+                    messages=[
+                        {"role": "user", "content": f"Create a project name and description based on this user prompt: '{user_prompt}'. Return only a JSON object with 'name' and 'description' fields. Example: {{\"name\": \"Project Name\", \"description\": \"Project description\"}}"}
+                    ]
+                )
 
-            data = json.loads(response.content)
-
-            name = data.get("name", name)
-            description = data.get("description", description)
+                data = json.loads(response.content)
+                name = data.get("name", f"Project for: {user_prompt[:50]}...")
+                description = data.get("description", user_prompt)
+            except (json.JSONDecodeError, Exception) as e:
+                # Fallback if LLM fails or returns invalid JSON
+                name = f"Project for: {user_prompt[:50]}..."
+                description = user_prompt
+        
+        # Ensure we always have a name
+        if not name:
+            name = "Untitled Project"
+            
+        # Ensure we always have a description
+        if not description:
+            description = user_prompt or "No description provided"
 
         project = Project(
             user_id=user_id,

@@ -2,11 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, ArrowUpRight, Lightbulb, Loader2, Mic } from "lucide-react";
+import { ArrowUpRight, Lightbulb, Loader2, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useVoiceRecording } from "@/hooks/use-voice-recording";
 import { QuickStart } from "./quick-start";
-import { useProjectDialog } from "@/providers/project-dialog-provider";
+import Typewriter from "typewriter-effect";
+import projectServices from "@/lib/services/project-services";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PLACEHOLDER_PHRASES = [
@@ -18,56 +20,19 @@ const PLACEHOLDER_PHRASES = [
   "Build a todo app with team collaboration...",
 ];
 
-// ─── Typing Placeholder Hook ─────────────────────────────────────────────────
-
-function useTypingPlaceholder(phrases: string[]) {
-  const [displayed, setDisplayed] = useState("");
-  const [phraseIdx, setPhraseIdx] = useState(0);
-  const [charIdx, setCharIdx] = useState(0);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-
-  useEffect(() => {
-    if (isPaused) return;
-
-    const current = phrases[phraseIdx];
-
-    const timeout = setTimeout(
-      () => {
-        if (!isDeleting) {
-          if (charIdx < current.length) {
-            setDisplayed(current.slice(0, charIdx + 1));
-            setCharIdx((c) => c + 1);
-          } else {
-            setIsPaused(true);
-            setTimeout(() => {
-              setIsPaused(false);
-              setIsDeleting(true);
-            }, 1800);
-          }
-        } else {
-          if (charIdx > 0) {
-            setDisplayed(current.slice(0, charIdx - 1));
-            setCharIdx((c) => c - 1);
-          } else {
-            setIsDeleting(false);
-            setPhraseIdx((i) => (i + 1) % phrases.length);
-          }
-        }
-      },
-      isDeleting ? 28 : charIdx === 0 ? 500 : 42
-    );
-
-    return () => clearTimeout(timeout);
-  }, [charIdx, isDeleting, isPaused, phraseIdx, phrases]);
-
-  return displayed;
-}
+const MODELS = [
+  { value: "gpt-4", label: "GPT-4" },
+  { value: "gpt-3.5-turbo", label: "GPT-3.5" },
+  { value: "claude-3-opus", label: "Claude 3" },
+  { value: "claude-3-sonnet", label: "Claude 3.5" },
+  { value: "gemini-pro", label: "Gemini" },
+];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string) => void) => void }) {
   const [value, setValue] = useState("");
+  const [selectedModel, setSelectedModel] = useState("gpt-4");
 
   useEffect(() => {
     onExternalPrompt?.((prompt) => {
@@ -78,8 +43,6 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
   const [isFocused, setIsFocused] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
 
-  const placeholder = useTypingPlaceholder(PLACEHOLDER_PHRASES);
-  const { open } = useProjectDialog();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
 
@@ -109,19 +72,16 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
     setIsBuilding(true);
 
     try {
-      // const project = await projectServices.createProject({
-      //   name: prompt.slice(0, 100),
-      //   description: prompt,
-      // });
+      const project = await projectServices.createProject({
+        userPrompt: prompt
+      });
 
-      // localStorage.setItem(
-      //   `project-${project.id}-initial-prompt`,
-      //   JSON.stringify({ prompt, autoSend: true, timestamp: Date.now() })
-      // );
+      localStorage.setItem(
+        `project-${project.id}-initial-prompt`,
+        JSON.stringify({ prompt, autoSend: true, timestamp: Date.now() })
+      );
 
-      // router.push(`/project/${project.id}`);
-
-      open();
+      router.push(`/project/${project.id}`);
   
     } catch (error) {
       console.error("Failed to create project:", error);
@@ -169,14 +129,18 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
             "
           />
 
-          {/* Animated typing placeholder */}
+          {/* Typewriter placeholder */}
           {!value && (
             <div className="absolute inset-0 pointer-events-none flex items-start">
               <span className="text-[15px] leading-relaxed text-muted-foreground">
-                {placeholder}
-                <span
-                  className="inline-block w-0.5 h-[1.1em] bg-primary/70 ml-0.5 align-text-bottom"
-                  style={{ animation: "blink 1s step-end infinite" }}
+                <Typewriter
+                  options={{
+                    strings: PLACEHOLDER_PHRASES,
+                    autoStart: true,
+                    loop: true,
+                    delay: 50,
+                    deleteSpeed: 30,
+                  }}
                 />
               </span>
             </div>
@@ -186,16 +150,20 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
         {/* Bottom row */}
         <div className="flex items-center justify-between gap-2">
 
-          {/* Left — attach + mic */}
+          {/* Left — model select + mic */}
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-xl"
-              aria-label="Open attach menu"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
+            <Select value={selectedModel} onValueChange={setSelectedModel}>
+              <SelectTrigger className="h-8 w-auto min-w-25 px-2 rounded-xl border-none bg-transparent hover:bg-accent text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MODELS.map((model) => (
+                  <SelectItem key={model.value} value={model.value} className="text-xs">
+                    {model.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
             {/* Mic button with pulse ring */}
             <div className="relative flex items-center justify-center h-8 w-8">
@@ -268,15 +236,6 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
 
 
       <QuickStart onSelectPrompt={(prompt) => setValue(prompt)} />
-
-
-      {/* Keyframes */}
-      <style>{`
-        @keyframes blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 }

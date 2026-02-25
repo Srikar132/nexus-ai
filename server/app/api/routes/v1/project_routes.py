@@ -22,7 +22,7 @@ async def create_project(
     """
     Create a new project for the authenticated user.
     """
-    project = await ProjectRepo(db).create(current_user.id, body.name, body.description)
+    project = await ProjectRepo(db).create(current_user.id, body.name, body.description , body.user_prompt)
     return project
 
 @router.get("/", response_model=ProjectListResponse)
