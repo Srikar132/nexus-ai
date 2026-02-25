@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, ArrowUpRight, Lightbulb, Loader2, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import projectServices from "@/lib/services/project-services";
 import { useVoiceRecording } from "@/hooks/use-voice-recording";
 import { QuickStart } from "./quick-start";
 import { useProjectDialog } from "@/providers/project-dialog-provider";
@@ -83,6 +82,8 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
   const { open } = useProjectDialog();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
+
+  // Attach menu dialog state
 
   // Auto-resize textarea as content grows
   const autoResize = useCallback(() => {
@@ -187,7 +188,12 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
 
           {/* Left — attach + mic */}
           <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-xl"
+              aria-label="Open attach menu"
+            >
               <Plus className="h-4 w-4" />
             </Button>
 
@@ -209,6 +215,7 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
                       : "text-muted-foreground hover:text-foreground hover:bg-accent"
                   }
                 `}
+                aria-label={isRecording ? "Stop recording" : "Start recording"}
               >
                 <Mic className="h-4 w-4" />
               </button>

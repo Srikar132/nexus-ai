@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { X } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,9 +21,9 @@ interface Prompt {
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
 const CATEGORIES: Category[] = [
-  { id: "todo",      icon: "✓",  label: "Todo App"         },
-  { id: "blog",      icon: "🔥", label: "Blog Platform"    },
-  { id: "crm",       icon: "📊", label: "CRM Dashboard"    },
+  { id: "todo", icon: "✓", label: "Todo App" },
+  { id: "blog", icon: "🔥", label: "Blog Platform" },
+  { id: "crm", icon: "📊", label: "CRM Dashboard" },
   { id: "ecommerce", icon: "🛒", label: "E-commerce Store" },
 ];
 
@@ -118,36 +118,6 @@ const PROMPTS: Record<string, Prompt[]> = {
   ],
 };
 
-// ─── Animation Variants ───────────────────────────────────────────────────────
-
-const containerVariants = {
-  hidden: {},
-  visible: {
-    transition: { staggerChildren: 0.07 },
-  },
-  exit: {
-    transition: { staggerChildren: 0.04, staggerDirection: -1 },
-  },
-};
-
-const itemVariants = {
-  hidden:  { opacity: 0, y: 16, filter: "blur(4px)" },
-  visible: {
-    opacity: 1, y: 0, filter: "blur(0px)",
-    transition: { duration: 0.35, ease: "easeOut" as const },
-  },
-  exit: {
-    opacity: 0, y: -10, filter: "blur(4px)",
-    transition: { duration: 0.2, ease: "easeIn" as const },
-  },
-};
-
-const backVariants = {
-  hidden:  { opacity: 0, x: -8 },
-  visible: { opacity: 1, x: 0, transition: { duration: 0.25, ease: "easeOut" as const } }, // easeOut cubic-bezier
-  exit:    { opacity: 0, x: -8, transition: { duration: 0.15 } },
-};
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 interface QuickStartProps {
@@ -156,101 +126,113 @@ interface QuickStartProps {
 
 export function QuickStart({ onSelectPrompt }: QuickStartProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
+  // Close panel when clicking outside
+  useEffect(() => {
+    if (!selectedCategory) return;
+    function handleClick(e: MouseEvent) {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setSelectedCategory(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [selectedCategory]);
 
-  const onSelect = (prompt : string) => {
+  const handleSelect = (prompt: string) => {
     setSelectedCategory(null);
     onSelectPrompt(prompt);
-  }
+  };
+
+  const activeCategory = CATEGORIES.find((c) => c.id === selectedCategory);
 
   return (
-    <div className="w-full max-w-2xl mx-auto mt-6 px-1">
+    <div className="w-full max-w-2xl mx-auto mt-5 px-1" ref={panelRef}>
 
-      {/* Label */}
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.4, delay: 0.1 }}
-        className="text-center text-[11px] tracking-[0.15em] text-muted-foreground/60 uppercase mb-4"
+      {/* ── Tab Row ── */}
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.1 }}
+        className="flex flex-wrap justify-center gap-2"
       >
-        Quick Start
-      </motion.p>
-
-      <AnimatePresence mode="wait">
-
-        {/* ── Stage 1 — Categories ── */}
-        {!selectedCategory && (
-          <motion.div
-            key="categories"
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            className="flex flex-wrap justify-center gap-2"
-          >
-            {CATEGORIES.map((cat) => (
-              <motion.button
-                key={cat.id}
-                variants={itemVariants}
-                onClick={() => setSelectedCategory(cat.id)}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                className="
-                  flex items-center gap-2 px-4 py-2 rounded-full
-                  border border-border/60 bg-card/60 backdrop-blur-sm
-                  text-sm text-muted-foreground
-                  hover:border-primary/40 hover:text-foreground hover:bg-primary/5
-                  transition-colors duration-200
-                "
-              >
-                <span className="text-base leading-none">{cat.icon}</span>
-                <span className="font-medium">{cat.label}</span>
-              </motion.button>
-            ))}
-          </motion.div>
-        )}
-
-        {/* ── Stage 2 — Prompts ── */}
-        {selectedCategory && (
-          <motion.div
-            key="prompts"
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            variants={containerVariants}
-            className="flex flex-col items-center gap-2"
-          >
-            {/* Back button */}
-            <motion.button
-              variants={backVariants}
-              onClick={() => setSelectedCategory(null)}
-              whileHover={{ x: -2 }}
-              className="
-                flex items-center gap-1.5 mb-1
-                text-[11px] text-muted-foreground/60
-                hover:text-muted-foreground transition-colors duration-150
-              "
+        {CATEGORIES.map((cat) => {
+          const isActive = selectedCategory === cat.id;
+          return (
+            <button
+              key={cat.id}
+              onClick={() =>
+                setSelectedCategory(isActive ? null : cat.id)
+              }
+              className={`
+                flex items-center gap-2 px-4 py-1.5 rounded-full
+                border text-sm font-medium
+                transition-all duration-200
+                ${isActive
+                  ? "border-border/80 bg-muted text-foreground"
+                  : "border-border/50 bg-transparent text-muted-foreground hover:text-foreground hover:border-border/70 hover:bg-muted/40"
+                }
+              `}
             >
-              <ArrowLeft className="h-3 w-3" />
-              <span className="tracking-wide uppercase">Back</span>
-            </motion.button>
+              <span className="text-sm leading-none">{cat.icon}</span>
+              <span>{cat.label}</span>
+            </button>
+          );
+        })}
+      </motion.div>
 
-            {/* Prompt pills */}
-            <div className="flex flex-wrap justify-center gap-2">
-              {PROMPTS[selectedCategory].map((prompt) => (
+      {/* ── Dropdown Panel ── */}
+      <AnimatePresence>
+        {selectedCategory && activeCategory && (
+          <motion.div
+            key={selectedCategory}
+            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 18, scale: 0.98 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="
+              mt-3 rounded-2xl border border-border/70
+              bg-card shadow-xl
+              overflow-hidden
+              min-w-[320px] max-w-xl mx-auto
+            "
+            style={{ zIndex: 30 }}
+          >
+            {/* Panel header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border/40">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <span>{activeCategory.icon}</span>
+                <span>{activeCategory.label}</span>
+              </div>
+              <button
+                onClick={() => setSelectedCategory(null)}
+                className="
+                  h-6 w-6 flex items-center justify-center rounded-md
+                  text-muted-foreground/60 hover:text-foreground
+                  hover:bg-muted/50 transition-colors duration-150
+                "
+                aria-label="Close"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* Prompt list */}
+            <div className="flex flex-col divide-y divide-border/30">
+              {PROMPTS[selectedCategory].map((prompt, i) => (
                 <motion.button
                   key={prompt.id}
-                  variants={itemVariants}
-                  onClick={() => onSelect(prompt.full)}
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                  title={prompt.full}
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 12 }}
+                  transition={{ duration: 0.18, delay: i * 0.045 }}
+                  onClick={() => handleSelect(prompt.full)}
                   className="
-                    max-w-60 px-4 py-2 rounded-full
-                    border border-border/60 bg-card/60 backdrop-blur-sm
-                    text-sm text-muted-foreground text-left
-                    hover:border-primary/40 hover:text-foreground hover:bg-primary/5
-                    transition-colors duration-200 truncate
+                    w-full text-left px-5 py-3.5
+                    text-sm text-muted-foreground
+                    hover:text-foreground hover:bg-muted/30
+                    transition-colors duration-150
                   "
                 >
                   {prompt.label}
@@ -259,7 +241,6 @@ export function QuickStart({ onSelectPrompt }: QuickStartProps) {
             </div>
           </motion.div>
         )}
-
       </AnimatePresence>
     </div>
   );

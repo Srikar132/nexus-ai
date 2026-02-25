@@ -17,7 +17,7 @@ from app.tasks.build_task import deploy_confirm_task, start_workflow_task , resu
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["messages"])
 
-log = logging.getLogger(__name__)
+# log = logging.
 
 # ── Helpers ───────────────────────────────────────────────────────
 # ── Serialise message + inject artifact data ──────────────────────
@@ -205,10 +205,10 @@ async def deploy_confirm(
     if not active_build:
         raise HTTPException(status_code=409, detail="No active build waiting for deployment.")
 
-    log.info(
-        "deploy_confirm project=%s build=%s provider=%s vars_count=%d",
-        project_id, active_build.id, body.deploy_provider, len(body.plaintext_vars),
-    )
+    # log.info(
+    #     "deploy_confirm project=%s build=%s provider=%s vars_count=%d",
+    #     project_id, active_build.id, body.deploy_provider, len(body.plaintext_vars),
+    # )
     # ↑ intentionally NOT logging body.plaintext_vars or any credential
 
     # Safety check: ensure thread_id exists for deployment

@@ -39,6 +39,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { signOut } from "next-auth/react"
+import Image from "next/image"
 
 // Menu items data
 const data = {
@@ -107,8 +108,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link href="/home" className="flex items-center gap-2">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <Command className="size-4" />
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg text-sidebar-primary-foreground">
+                  <Image width={86} height={86} src="/images/logo.png" alt="Nexus AI Logo" />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">Nexus AI</span>

@@ -7,7 +7,7 @@ import { Zap } from "lucide-react";
 const HomePage = () => {
 
   return (
-    <div className="tech-grid flex flex-col max-h-full overflow-hidden justify-center items-center  flex-1 w-full px-4 py-2 gap-10">
+    <div className="tech-grid flex flex-col max-h-full overflow-hidden justify-center items-center  flex-1 w-full px-2 py-2 gap-10">
       {/* Pipeline Badge */}
       <div className="flex justify-center">
         <Badge
@@ -25,7 +25,7 @@ const HomePage = () => {
       </div>
 
       {/* Heading */}
-      <div className="text-center space-y-4 max-w-2xl">
+      <div className="text-center space-y-3 max-w-2xl">
         <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.15]">
           What do you want to{" "}
           <span className="gradient-text">ship today?</span>
