@@ -12,5 +12,6 @@ interface SessionProviderProps {
  */
 export async function SessionProvider({ children }: SessionProviderProps) {
   const session = await auth();
+  console.log(session?.user)
   return <NextAuthSessionProvider session={session}>{children}</NextAuthSessionProvider>;
 }

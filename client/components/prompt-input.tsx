@@ -2,9 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, ArrowUpRight, Lightbulb, Loader2 } from "lucide-react";
+import { Plus, ArrowUpRight, Lightbulb, Loader2, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import projectServices from "@/lib/services/project-services";
+import { useVoiceRecording } from "@/hooks/use-voice-recording";
+import { QuickStart } from "./quick-start";
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const PLACEHOLDER_PHRASES = [
   "Build me a SaaS dashboard with auth...",
@@ -15,7 +19,7 @@ const PLACEHOLDER_PHRASES = [
   "Build a todo app with team collaboration...",
 ];
 
-
+// ─── Typing Placeholder Hook ─────────────────────────────────────────────────
 
 function useTypingPlaceholder(phrases: string[]) {
   const [displayed, setDisplayed] = useState("");
@@ -61,26 +65,45 @@ function useTypingPlaceholder(phrases: string[]) {
   return displayed;
 }
 
-function PromptInput() {
+// ─── Component ───────────────────────────────────────────────────────────────
+
+function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string) => void) => void }) {
   const [value, setValue] = useState("");
+
+  useEffect(() => {
+    onExternalPrompt?.((prompt) => {
+      setValue(prompt);
+    });
+  }, [onExternalPrompt]);
+
   const [isFocused, setIsFocused] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
+
   const placeholder = useTypingPlaceholder(PLACEHOLDER_PHRASES);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
 
+  // Auto-resize textarea as content grows
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
-    if (el) {
-      el.style.height = "auto";
-      el.style.height = Math.min(el.scrollHeight, 200) + "px";
-    }
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
   }, []);
 
+  // Voice recording hook
+  const { isRecording, micError, startRecording, stopRecording } =
+    useVoiceRecording({
+      onTranscript: (text) => setValue(text),
+      onResize: autoResize,
+    });
+
+  // Build project and navigate
   const handleBuildProject = useCallback(async () => {
     const prompt = value.trim();
     if (!prompt || isBuilding) return;
 
+    stopRecording();
     setIsBuilding(true);
 
     try {
@@ -89,37 +112,34 @@ function PromptInput() {
         description: prompt,
       });
 
-      // Store the prompt in localStorage with the project ID as the key
-      localStorage.setItem(`project-${project.id}-initial-prompt`, JSON.stringify({
-        prompt,
-        autoSend: true,
-        timestamp: Date.now()
-      }));
+      localStorage.setItem(
+        `project-${project.id}-initial-prompt`,
+        JSON.stringify({ prompt, autoSend: true, timestamp: Date.now() })
+      );
 
       router.push(`/project/${project.id}`);
     } catch (error) {
       console.error("Failed to create project:", error);
+    } finally {
+      setValue("");
       setIsBuilding(false);
-    }finally {
-        setValue("");
-        setIsBuilding(false);
     }
-  }, [value, isBuilding, router]);
+  }, [value, isBuilding, router, stopRecording]);
 
   return (
-    <div className="w-full max-w-2xl mx-auto ">
+    <div className="w-full max-w-2xl mx-auto">
+      {/* Card */}
       <div
         className={`
           relative rounded-2xl border bg-card p-4 flex flex-col gap-4
           transition-all duration-300 ease-out
-          ${
-            isFocused
-              ? "border-primary/40 shadow-[0_0_0_1px_oklch(0.61_0.225_280/20%),0_8px_32px_oklch(0_0_0/40%)]"
-              : "border-border shadow-[0_4px_24px_oklch(0_0_0/25%)]"
+          ${isFocused
+            ? "border-primary/40 shadow-[0_0_0_1px_oklch(0.61_0.225_280/20%),0_8px_32px_oklch(0_0_0/40%)]"
+            : "border-border shadow-[0_4px_24px_oklch(0_0_0/25%)]"
           }
         `}
       >
-        {/* Textarea with animated placeholder */}
+        {/* Textarea */}
         <div className="relative min-h-20">
           <textarea
             ref={textareaRef}
@@ -139,22 +159,19 @@ function PromptInput() {
             rows={3}
             className="
               w-full resize-none border-none outline-none ring-0 shadow-none
-              bg-transparent text-foreground
-              text-[15px] leading-relaxed
-              min-h-20 max-h-50
-              scrollbar-none p-0 relative z-10
+              bg-transparent text-foreground text-[15px] leading-relaxed
+              min-h-20 max-h-[200px] scrollbar-none p-0 relative z-10
             "
           />
-          {/* Animated placeholder — only shown when empty */}
+
+          {/* Animated typing placeholder */}
           {!value && (
             <div className="absolute inset-0 pointer-events-none flex items-start">
               <span className="text-[15px] leading-relaxed text-muted-foreground">
                 {placeholder}
                 <span
-                  className="inline-block w-0.5 h-[1.1em] bg-primary/70 ml-0.5 align-text-bottom animate-[blink_1s_step-end_infinite]"
-                  style={{
-                    animation: "blink 1s step-end infinite",
-                  }}
+                  className="inline-block w-0.5 h-[1.1em] bg-primary/70 ml-0.5 align-text-bottom"
+                  style={{ animation: "blink 1s step-end infinite" }}
                 />
               </span>
             </div>
@@ -162,15 +179,44 @@ function PromptInput() {
         </div>
 
         {/* Bottom row */}
-        <div className="flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-xl"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
+        <div className="flex items-center justify-between gap-2">
 
+          {/* Left — attach + mic */}
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl">
+              <Plus className="h-4 w-4" />
+            </Button>
+
+            {/* Mic button with pulse ring */}
+            <div className="relative flex items-center justify-center h-8 w-8">
+              {/* Pulse ring — only visible when recording */}
+              {isRecording && (
+                <span className="absolute inset-0 rounded-full bg-primary opacity-30 animate-pulse" />
+              )}
+              <button
+                onClick={isRecording ? stopRecording : startRecording}
+                className={`
+                  relative z-10 h-8 w-8 rounded-xl flex items-center justify-center
+                  transition-colors
+                  ${isRecording
+                    ? "text-primary"
+                    : micError
+                      ? "text-red-400"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                  }
+                `}
+              >
+                <Mic className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Mic error label */}
+            {micError && (
+              <span className="text-[11px] text-red-400 ml-1">Mic denied</span>
+            )}
+          </div>
+
+          {/* Right — plan + build */}
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -187,9 +233,9 @@ function PromptInput() {
               onClick={handleBuildProject}
               className="
                 h-8 px-4 rounded-xl font-semibold text-sm gap-1.5
-                bg-primary hover:bg-primary/90
-                text-primary-foreground shadow-md
-                transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]
+                bg-primary hover:bg-primary/90 text-primary-foreground
+                shadow-md transition-all duration-200
+                hover:scale-[1.02] active:scale-[0.98]
                 disabled:opacity-50 disabled:pointer-events-none
               "
             >
@@ -209,7 +255,11 @@ function PromptInput() {
         </div>
       </div>
 
-      {/* Cursor blink keyframe */}
+
+      <QuickStart onSelectPrompt={(prompt) => setValue(prompt)} />
+
+
+      {/* Keyframes */}
       <style>{`
         @keyframes blink {
           0%, 100% { opacity: 1; }
@@ -220,4 +270,4 @@ function PromptInput() {
   );
 }
 
-export  default PromptInput;
+export default PromptInput;
