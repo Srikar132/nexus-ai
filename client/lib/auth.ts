@@ -82,7 +82,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     const dbUser = await res.json();
 
                     // Attach backend user data to the user object for JWT
-                    user.id = dbUser.id; // Database user ID
+                    user.id = dbUser.id; // Databae user ID
                     user.email = dbUser.email;
                     user.username = dbUser.username;
                     user.onboardingCompleted = dbUser.onboarding_completed === 1;

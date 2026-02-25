@@ -8,7 +8,7 @@ from app.core.config import settings
 class UserJWEModel(BaseModel):
     """User model matching NextAuth JWT structure"""
     id: str  # Database user ID
-    email: str
+    email: Optional[str] = None
     username: Optional[str] = None
     onboardingCompleted: Optional[bool] = False
     name: Optional[str] = None

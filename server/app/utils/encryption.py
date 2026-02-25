@@ -1,6 +1,6 @@
 from cryptography.fernet import Fernet
 from app.core.config import settings
-import base64
+
 
 # Initialize cipher with settings
 cipher = Fernet(settings.ENCRYPTION_KEY.encode())
