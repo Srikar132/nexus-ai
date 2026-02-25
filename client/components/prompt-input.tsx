@@ -46,7 +46,8 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
 
-  // Attach menu dialog state
+  // Web search state
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
 
   // Auto-resize textarea as content grows
   const autoResize = useCallback(() => {

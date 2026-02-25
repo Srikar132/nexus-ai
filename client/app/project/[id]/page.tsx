@@ -7,9 +7,12 @@ const ProjectPage = async ({
     id: string;
   };
 }) => {
+  let id: string | null = null;
+  let hasError = false;
 
   try {
-    const { id } = await params;
+    const resolvedParams = await params;
+    id = resolvedParams.id;
 
     const project = await projectServices.getProject(id);
 
@@ -25,6 +28,10 @@ const ProjectPage = async ({
     );
   } catch (error) {
     console.error("Error fetching project:", error);
+    hasError = true;
+  }
+
+  if (hasError) {
     return (
       <main>
         <h1>Project Details</h1>

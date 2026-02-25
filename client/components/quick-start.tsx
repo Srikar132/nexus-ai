@@ -148,7 +148,7 @@ export function QuickStart({ onSelectPrompt }: QuickStartProps) {
   const activeCategory = CATEGORIES.find((c) => c.id === selectedCategory);
 
   return (
-    <div className="w-full max-w-2xl mx-auto mt-5 px-1" ref={panelRef}>
+    <div className="w-full max-w-2xl mx-auto mt-5 px-1 relative" ref={panelRef}>
 
       {/* ── Tab Row ── */}
       <motion.div
@@ -182,22 +182,23 @@ export function QuickStart({ onSelectPrompt }: QuickStartProps) {
         })}
       </motion.div>
 
-      {/* ── Dropdown Panel ── */}
+      {/* ── Dropdown Panel (Absolute positioned to prevent layout shift) ── */}
       <AnimatePresence>
         {selectedCategory && activeCategory && (
           <motion.div
             key={selectedCategory}
-            initial={{ opacity: 0, y: 18, scale: 0.98 }}
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 18, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: "easeOut" }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
             className="
-              mt-3 rounded-2xl border border-border/70
+              absolute left-1/2 -translate-x-1/2 top-full mt-3
+              w-full max-w-xl
+              rounded-2xl border border-border/70
               bg-card shadow-xl
               overflow-hidden
-              min-w-[320px] max-w-xl mx-auto
             "
-            style={{ zIndex: 30 }}
+            style={{ zIndex: 50 }}
           >
             {/* Panel header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-border/40">
@@ -223,10 +224,9 @@ export function QuickStart({ onSelectPrompt }: QuickStartProps) {
               {PROMPTS[selectedCategory].map((prompt, i) => (
                 <motion.button
                   key={prompt.id}
-                  initial={{ opacity: 0, x: 12 }}
+                  initial={{ opacity: 0, x: 8 }}
                   animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 12 }}
-                  transition={{ duration: 0.18, delay: i * 0.045 }}
+                  transition={{ duration: 0.15, delay: i * 0.03 }}
                   onClick={() => handleSelect(prompt.full)}
                   className="
                     w-full text-left px-5 py-3.5
