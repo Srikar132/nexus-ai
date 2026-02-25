@@ -1,8 +1,7 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException , Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from test.test_reprlib import r
-from uvicorn import logging
+import logging
 from app.schemas.message_schemas import SendMessageRequest, MessageListResponse
 from app.schemas.project_schemas import DeployConfirmRequest, SendMessageResponse
 from app.api.deps import get_current_user
@@ -132,16 +131,7 @@ async def send_message(
             thread_id = str(uuid.uuid4())
             # Update the project with the new thread_id
             await ProjectRepo(db).update(project_id, current_user.id, langgraph_thread_id=thread_id)
-            
-        # Start brand new LangGraph thread
-        start_workflow_task.delay(
-            project_id          = str(project_id),
-            thread_id           = thread_id,
-            user_message        = body.content,
-            project_name        = project.name,
-            project_description = project.description or "",
-        )
-        
+
     else:
         # Resume existing LangGraph thread with new user message
         # thread_id should exist at this point, but safety check
@@ -150,7 +140,22 @@ async def send_message(
                 status_code=500, 
                 detail="Project has messages but no LangGraph thread ID. Data inconsistency."
             )
-            
+
+    # ── Commit all DB changes before dispatching Celery task ──────
+    # This ensures the user message + thread_id are persisted before
+    # the worker tries to read them from the DB
+    await db.commit()
+
+    if is_first_message:
+        # Start brand new LangGraph thread
+        start_workflow_task.delay(
+            project_id          = str(project_id),
+            thread_id           = thread_id,
+            user_message        = body.content,
+            project_name        = project.name,
+            project_description = project.description or "",
+        )
+    else:
         resume_workflow_task.delay(
             project_id   = str(project_id),
             thread_id    = thread_id,
@@ -170,7 +175,8 @@ async def send_message(
 
 # ════════════════════════════════════════════════════════════════════
 # POST /messages/deploy-confirm
-# User sends decrypted env vars + credentials from browser.
+# User sends plaintext app env vars (STRIPE_KEY, etc.)
+# Platform credentials (GitHub token, Railway key) are fetched server-side.
 # Resumes deployer node — credentials never stored.
 # ════════════════════════════════════════════════════════════════════
 

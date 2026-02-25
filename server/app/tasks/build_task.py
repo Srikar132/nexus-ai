@@ -36,7 +36,7 @@ from datetime import datetime
 from celery import Celery
 from langgraph.types import Command
 from app.core.config import settings
-from app.models import User, Project, Build, Message, Artifact
+# from app.models import User, Project, Build, Message, Artifact
 
 log = logging.getLogger(__name__)
 
@@ -57,22 +57,22 @@ celery_app.conf.update(
 
 def _workflow():
     from app.agents.workflow import create_workflow
-    return create_workflow(settings.DATABASE_SYNC_URL)
+    return create_workflow(settings.DATABASE_URL)
 
 
 def _db():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    return sessionmaker(create_engine(settings.DATABASE_SYNC_URL))()
+    return sessionmaker(create_engine(settings.DATABASE_URL))()
 
 def _get_user(db, user_id: str):
     from app.models import User
     return db.get(User, user_id)
 
 
-def _get_project(db, project_id: str):
-    from app.models import Project
-    return db.get(Project, project_id)
+# def _get_project(db, project_id: str):
+#     from app.models import Project
+#     return db.get(Project, project_id)
 
 
 
@@ -234,10 +234,9 @@ def start_workflow_task(
             "project_name":         project_name,
             "project_description":  project_description,
             "chat_history":         [],
-            "current_user_message": user_message,
+            "current_user_input":   {"message": user_message, "message_type": "chat"},
             "current_plan":         None,
             "approved_plan":        None,
-            "docker_build_id":      None,
             "app_url":              None,
             "security_iteration":   0,
             "security_issues":      [],
@@ -250,14 +249,24 @@ def start_workflow_task(
             "error":                None,
         }
 
-        # Run — conductor will INTERRUPT after first response
+        # Run — interrupt_before=["conductor"] will pause immediately.
+        # First stream initializes state and checkpoints it.
         for _ in wf.stream(initial_state, config=config):
+            pass
+
+        # Now resume — conductor_node will read current_user_input from state
+        # (set in initial_state above) and process the first message.
+        # After conductor finishes, it loops back to itself with current_user_input=None,
+        # which triggers interrupt_before again — pausing for the next user message.
+        for _ in wf.stream(Command(resume=None), config=config):
             pass
 
         snap  = wf.get_state(config)
         state = dict(snap.values)
         _save_state_to_db(db, state, project_id, state.get("build_id"))
-        publish(project_id, {"type": "worker_done"})
+
+        # Don't publish "done" here — conductor_node already publishes
+        # {"type": "done", "waiting_for": "user_input"} before it loops back.
 
     except Exception as e:
         log.exception("start_workflow_task failed project=%s", project_id)
@@ -333,15 +342,11 @@ def resume_workflow_task(
         _save_state_to_db(db, state, project_id, state.get("build_id"))
 
         if not snap.next:
+            # Graph completed (reached END) — finalize build in DB
             _finalise_build(db, state)
-            publish(project_id, {
-                "type":       "done",
-                "build_id":   state.get("build_id"),
-                "deploy_url": state.get("deploy_url"),
-                "repo_url":   state.get("repo_url"),
-            })
-        else:
-            publish(project_id, {"type": "worker_done"})
+            # Deployer node already published its own "done" event with deploy_url/repo_url.
+            # No need to publish again — avoid double "done" which confuses SSE.
+        # else: graph paused at an interrupt — the node that interrupted already published "done"
 
     except Exception as e:
         log.exception("resume_workflow_task failed project=%s", project_id)
@@ -376,7 +381,7 @@ def railway_connect_task(self, project_id: str, thread_id: str):
         snap = wf.get_state(config)
         if not snap or not snap.values:
             # No active build — key saved for future use, nothing to resume
-            publish(project_id, {"type": "worker_done"})
+            publish(project_id, {"type": "done", "status": "no_active_build"})
             return
 
         next_nodes = list(snap.next or [])
@@ -385,7 +390,7 @@ def railway_connect_task(self, project_id: str, thread_id: str):
         # (graph will be paused at "deployer" node, not conductor)
         if "deployer" not in next_nodes and next_nodes:
             # Build is at a different stage — key saved for future, nothing to do now
-            publish(project_id, {"type": "worker_done"})
+            publish(project_id, {"type": "done", "status": "key_saved"})
             return
 
         log.info("Resuming deployer after Railway connect project=%s", project_id)
@@ -404,13 +409,8 @@ def railway_connect_task(self, project_id: str, thread_id: str):
 
         if not snap.next:
             _finalise_build(db, state)
-            publish(project_id, {
-                "type":       "done",
-                "deploy_url": state.get("deploy_url"),
-                "repo_url":   state.get("repo_url"),
-            })
-        else:
-            publish(project_id, {"type": "worker_done"})
+            # Deployer node already published "done" with deploy_url/repo_url
+        # else: deployer interrupted again (e.g. for env_vars) — it published "done" itself
 
     except Exception as e:
         log.exception("railway_connect_task failed project=%s", project_id)
@@ -506,13 +506,8 @@ def deploy_confirm_task(
 
         if not snap.next:
             _finalise_build(db, state)
-            publish(project_id, {
-                "type":       "done",
-                "deploy_url": state.get("deploy_url"),
-                "repo_url":   state.get("repo_url"),
-            })
-        else:
-            publish(project_id, {"type": "worker_done"})
+            # Deployer node already published "done" with deploy_url/repo_url
+        # else: deployer interrupted again — it published "done" itself
 
     except Exception as e:
         log.exception("deploy_confirm_task failed project=%s", project_id)

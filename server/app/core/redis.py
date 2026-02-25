@@ -29,7 +29,8 @@ def publish(project_id: str, event: dict) -> None:
 async def subscribe_and_stream(project_id: str):
     """
     Async generator for SSE endpoint.
-    Yields SSE-formatted strings until 'done' or 'build_failed' event.
+    Yields SSE-formatted strings until a terminal event is received.
+    Terminal events: 'done', 'build_failed', 'worker_done'
     """
     redis  = await get_async_redis()
     pubsub = redis.pubsub()
@@ -40,7 +41,7 @@ async def subscribe_and_stream(project_id: str):
                 continue
             event = json.loads(raw["data"])
             yield f"data: {json.dumps(event)}\n\n"
-            if event.get("type") in ("done", "build_failed"):
+            if event.get("type") in ("done", "build_failed", "worker_done"):
                 break
             await asyncio.sleep(0)
     finally:

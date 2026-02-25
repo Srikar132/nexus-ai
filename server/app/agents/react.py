@@ -16,12 +16,12 @@ Max iterations prevents infinite loops.
 """
 import json
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
-from langchain_anthropic import ChatAnthropic
 from langchain_core.tools import BaseTool
 from app.core.redis import publish
 from app.core.config import settings
+from app.core.llm import get_llm
 
-MAX_ITERATIONS = 2   # safety cap per agent run
+MAX_ITERATIONS = 15   # safety cap per agent run (callers can override via max_iter)
 
 
 def run_react_agent(
@@ -32,6 +32,7 @@ def run_react_agent(
     tools:       list[BaseTool],
     history:     list = None,  # optional prior messages for context
     max_iter:    int  = MAX_ITERATIONS,
+    model:       str  = "llama-3.1-70b",  # Allow model selection
 ) -> tuple[str, list[dict]]:
     """
     Run a ReAct agent loop.
@@ -40,26 +41,39 @@ def run_react_agent(
         final_text   — the agent's final text response (no tool call)
         tool_calls   — list of all tool calls made: [{tool, input, output}]
     """
-    llm = ChatAnthropic(
-        model       = "claude-opus-4-6",
-        api_key     = settings.ANTHROPIC_API_KEY,
-        max_tokens  = 8096,
-        temperature = 0,
-    ).bind_tools(tools)
+    # Get unified LLM instance
+    llm = get_llm(model)
 
-    # Build message history
-    messages    = [SystemMessage(content=system)]
+    # Build message history in unified format
+    messages = [{"role": "system", "content": system}]
+    
     if history:
-        messages.extend(history)
-    messages.append(HumanMessage(content=user_prompt))
+        # Convert LangChain messages to dict format if needed
+        for msg in history:
+            if hasattr(msg, 'type'):
+                if msg.type == "system":
+                    messages.append({"role": "system", "content": msg.content})
+                elif msg.type == "human":
+                    messages.append({"role": "user", "content": msg.content})
+                elif msg.type == "ai":
+                    messages.append({"role": "assistant", "content": msg.content})
+                elif msg.type == "tool":
+                    messages.append({"role": "user", "content": f"[Tool Result]: {msg.content}"})
+            else:
+                messages.append(msg)
+    
+    messages.append({"role": "user", "content": user_prompt})
 
-    tool_map   = {t.name: t for t in tools}
+    tool_map = {t.name: t for t in tools}
     tool_calls_log = []
     final_text = ""
 
     for iteration in range(max_iter):
-        response = llm.invoke(messages)
-        messages.append(response)
+        # Get response with tools
+        response = llm.chat_with_tools(messages, tools, max_tokens=8096, temperature=0)
+        
+        # Add AI response to message history
+        messages.append({"role": "assistant", "content": response.content})
 
         # ── Agent chose to use a tool ─────────────────────────────
         if response.tool_calls:
@@ -102,7 +116,10 @@ def run_react_agent(
                 })
 
                 # Add tool result to messages so agent can reason about it
-                messages.append(ToolMessage(content=str(result), tool_call_id=tool_id))
+                messages.append({
+                    "role": "user", 
+                    "content": f"[Tool Result] Tool '{tool_name}' returned: {str(result)}"
+                })
 
         # ── Agent gave a final text response (no tool call) ───────
         else:

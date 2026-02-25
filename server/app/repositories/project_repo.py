@@ -3,6 +3,8 @@ from sqlalchemy import select, desc, update, func
 import uuid
 from typing import List, Optional
 from app.models.project import Project
+from app.core.llm import get_llm
+import json
 
 
 class ProjectRepo:
@@ -17,12 +19,28 @@ class ProjectRepo:
     async def create(
         self,
         user_id: uuid.UUID,
-        name: str,
-        description: str = None,
+        name: str | None = None,
+        description: str | None = None,
+        user_prompt: str | None = None
     ) -> Project:
         """
         Create a new project.
         """
+        
+        if not name and not description:
+            llm = get_llm("llama-3.1-70b")
+
+            response = llm.chat(
+                messages=[
+                    {"role": "user", "content": f"Create a project name and description based on this user prompt: '{user_prompt}'. Return only a JSON object with 'name' and 'description' fields. Example: {{\"name\": \"Project Name\", \"description\": \"Project description\"}}"}
+                ]
+            )
+
+            data = json.loads(response.content)
+
+            name = data.get("name", name)
+            description = data.get("description", description)
+
         project = Project(
             user_id=user_id,
             name=name,

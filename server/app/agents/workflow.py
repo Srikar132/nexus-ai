@@ -145,8 +145,8 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.types import interrupt, Command
 
-import anthropic
 from app.core.config import settings
+from app.core.llm import get_llm
 from app.core.redis import publish
 from app.core.stream_parser import StreamParser, ARTIFACT_START, ARTIFACT_END
 from app.core.docker_manager import DockerManager
@@ -155,9 +155,9 @@ from app.agents.react import run_react_agent
 from app.agents.tools.docker_tools import get_docker_tools
 from app.agents.tools.security_tools import get_security_tools
 from app.agents.tools.deploy_tools import get_deploy_tools
-from app.agents.rag import ProjectRAG
 
-ai = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+# Initialize LLM - can easily switch models here
+llm = get_llm("llama-3.1-8b")  # or "gpt-4o", "claude-3-opus", etc.
 
 # ═══════════════════════════════════════════════════════════════════
 # GRAPH STATE — persisted to PostgreSQL between interrupts
@@ -172,7 +172,11 @@ class GraphState(TypedDict):
 
     # Conversation (conductor context window)
     chat_history:         list[dict]   # [{role, content}] last 40 exchanges
-    current_user_message: str
+    
+    # Current user input — set by interrupt resume value from build_task.py
+    # On first run: set directly in initial_state as {"message": "...", "message_type": "chat"}
+    # On resume: set by Command(resume={"message": "...", "message_type": "..."})
+    current_user_input:   Optional[dict]  # {"message": str, "message_type": str}
 
     # Plan — current_plan and approved_plan both store only the "content" dict from plan artifacts
     # (NOT the full artifact wrapper with "artifact_type" and "title")
@@ -203,8 +207,8 @@ class GraphState(TypedDict):
 
 # ═══════════════════════════════════════════════════════════════════
 # CONDUCTOR STREAMING HELPER
-# Conductor uses the raw Anthropic SDK for true token streaming.
-# (ReAct agents use LangChain — conductor is purely conversational.)
+# Conductor uses the unified LLM for true token streaming.
+# (ReAct agents also use unified LLM — now consistent across all agents.)
 # ═══════════════════════════════════════════════════════════════════
 
 def _stream_conductor(
@@ -213,7 +217,7 @@ def _stream_conductor(
     messages:   list,
 ) -> tuple[list[dict], list[dict]]:
     """
-    Stream tokens from Claude.  Returns (blocks, artifacts).
+    Stream tokens from LLM.  Returns (blocks, artifacts).
     blocks   — [{type: "text", content: "..."}, {type: "artifact", artifact_id: "temp-uuid"}]
     artifacts — [{temp_id, artifact_type, title, content}]
     """
@@ -222,14 +226,13 @@ def _stream_conductor(
     artifacts:   list[dict] = []
     current_text = ""
 
-    with ai.messages.stream(
-        model      = "claude-opus-4-6",
-        max_tokens = 2000,
-        system     = system,
-        messages   = messages,
-    ) as stream:
-        for token in stream.text_stream:
-            for event in parser.feed(token):
+    # Convert to unified format
+    unified_messages = [{"role": "system", "content": system}] + messages
+
+    # Stream from unified LLM
+    for chunk in llm.chat_stream(unified_messages, max_tokens=2000):
+        if not chunk.done:
+            for event in parser.feed(chunk.content):
                 if event.kind == "text":
                     current_text += event.text
                     publish(project_id, {
@@ -266,23 +269,25 @@ def _stream_conductor(
     return blocks, artifacts
 
 
-# ═══════════════════════════════════════════════════════════════════
-# NODE 1 — CONDUCTOR
-# ═══════════════════════════════════════════════════════════════════
-
-APPROVAL_KEYWORDS = [
-    "approve", "approved", "looks good", "lgtm",
-    "start build", "go ahead", "proceed", "ship it", "build it",
-]
 
 
 def conductor_node(state: GraphState) -> Command:
     project_id   = state["project_id"]
-    user_input   = state.get("current_user_input") or {}
-    user_message = user_input.get("message", "")
-    message_type = user_input.get("message_type", "chat")
     chat_history = state["chat_history"]
     current_plan = state.get("current_plan")
+
+    # ── Get user input ────────────────────────────────────────────
+    # On first run: current_user_input is set in initial_state by start_workflow_task
+    # On subsequent runs: current_user_input is set by Command(resume=...) from resume_workflow_task
+    # The interrupt_before=["conductor"] means the graph pauses BEFORE this node.
+    # When resumed, the resume value is injected via interrupt().
+    user_input = state.get("current_user_input")
+    if not user_input:
+        # This happens on resume — get the value from interrupt
+        user_input = interrupt("waiting_for_user")
+    
+    user_message = user_input.get("message", "") if isinstance(user_input, dict) else str(user_input)
+    message_type = user_input.get("message_type", "chat") if isinstance(user_input, dict) else "chat"
 
     publish(project_id, {"type": "agent_start", "role": "conductor"})
 
@@ -290,25 +295,35 @@ def conductor_node(state: GraphState) -> Command:
     if message_type == "approval":
         if not current_plan:
             publish(project_id, {
-                "type": "text_chunk",
+                "type":  "text_chunk",
                 "chunk": "⚠️ No plan to approve yet. Tell me what to build!\n",
-                "role": "conductor",
+                "role":  "conductor",
             })
-            next_input = interrupt("waiting_for_user")
-            return Command(goto="conductor", update={**state, "current_user_input": next_input})
+            publish(project_id, {"type": "done", "waiting_for": "user_input"})
+            # Loop back — clear current_user_input so next iteration waits for interrupt
+            return Command(goto="conductor", update={
+                **state,
+                "current_user_input": None,
+            })
 
         publish(project_id, {
-            "type": "text_chunk", "chunk": "✅ Plan approved! Starting the build...\n", "role": "conductor",
+            "type":  "text_chunk",
+            "chunk": "✅ Plan approved! Starting the build...\n",
+            "role":  "conductor",
         })
         new_state = {
             **state,
-            "approved_plan": current_plan,
+            "approved_plan":    current_plan,
+            "current_user_input": None,  # Clear so it's not reused
             "messages_to_save": list(state["messages_to_save"]) + [{
-                "role": "conductor", "message_type": "conductor_text",
-                "content": [{"type": "text", "content": "✅ Plan approved! Starting the build..."}],
+                "role":         "conductor",
+                "message_type": "conductor_text",
+                "content":      [{"type": "text", "content": "✅ Plan approved! Starting the build..."}],
             }],
         }
-        publish(project_id, {"type": "done", "waiting_for": "build"})
+        # NOTE: Do NOT publish "done" here — the build pipeline (artificer → guardian → deployer)
+        # will continue running in the same wf.stream() call. The deployer node publishes "done"
+        # when it interrupts for env vars. Publishing "done" here would close the SSE prematurely.
         return Command(goto="artificer", update=new_state)
 
 
@@ -400,8 +415,9 @@ After showing a plan ALWAYS end with:
         new_state["current_plan"] = plan_artifact.get("content", {})
 
     publish(project_id, {"type": "done", "waiting_for": "user_input"})
-    next_input = interrupt("waiting_for_user")
-    new_state["current_user_input"] = next_input
+    
+    # Clear current_user_input so next conductor iteration waits for interrupt
+    new_state["current_user_input"] = None
     return Command(goto="conductor", update=new_state)
 
 # ═══════════════════════════════════════════════════════════════════

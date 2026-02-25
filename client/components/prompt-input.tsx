@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import projectServices from "@/lib/services/project-services";
 import { useVoiceRecording } from "@/hooks/use-voice-recording";
 import { QuickStart } from "./quick-start";
+import { useProjectDialog } from "@/providers/project-dialog-provider";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PLACEHOLDER_PHRASES = [
@@ -79,6 +80,7 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
   const [isBuilding, setIsBuilding] = useState(false);
 
   const placeholder = useTypingPlaceholder(PLACEHOLDER_PHRASES);
+  const { open } = useProjectDialog();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
 
@@ -106,17 +108,20 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
     setIsBuilding(true);
 
     try {
-      const project = await projectServices.createProject({
-        name: prompt.slice(0, 100),
-        description: prompt,
-      });
+      // const project = await projectServices.createProject({
+      //   name: prompt.slice(0, 100),
+      //   description: prompt,
+      // });
 
-      localStorage.setItem(
-        `project-${project.id}-initial-prompt`,
-        JSON.stringify({ prompt, autoSend: true, timestamp: Date.now() })
-      );
+      // localStorage.setItem(
+      //   `project-${project.id}-initial-prompt`,
+      //   JSON.stringify({ prompt, autoSend: true, timestamp: Date.now() })
+      // );
 
-      router.push(`/project/${project.id}`);
+      // router.push(`/project/${project.id}`);
+
+      open();
+  
     } catch (error) {
       console.error("Failed to create project:", error);
     } finally {

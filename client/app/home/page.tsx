@@ -7,7 +7,7 @@ import { Zap } from "lucide-react";
 const HomePage = () => {
 
   return (
-    <div className="tech-grid flex flex-col max-h-full border overflow-hidden justify-center items-center  flex-1 w-full px-4 py-2 gap-10">
+    <div className="tech-grid flex flex-col max-h-full overflow-hidden justify-center items-center  flex-1 w-full px-4 py-2 gap-10">
       {/* Pipeline Badge */}
       <div className="flex justify-center">
         <Badge
