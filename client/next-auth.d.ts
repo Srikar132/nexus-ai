@@ -10,7 +10,7 @@ declare module "next-auth" {
     accessToken?: string;
     user: {
       id: string;
-      email: string;
+      email?: string;
       username?: string;
       onboardingCompleted: boolean;
     } & DefaultSession["user"];
@@ -22,16 +22,9 @@ declare module "next-auth" {
    */
   interface User extends DefaultUser {
     id: string;
-    githubId: string;
-    email: string;
+    email?: string;
     username?: string;
-    preferredStack?: string;
-    preferredLanguage?: string;
-    developerLevel: "beginner" | "intermediate" | "advanced" | "founder";
     onboardingCompleted: boolean;
-    subscriptionTier: string;
-    monthlyBuildsUsed: number;
-    monthlyBuildsLimit: number;
   }
 }
 
@@ -41,7 +34,7 @@ declare module "next-auth/jwt" {
    */
   interface JWT extends DefaultJWT {
     id: string;
-    email: string;
+    email?: string;
     username?: string;
     onboardingCompleted: boolean;
   }

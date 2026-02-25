@@ -37,6 +37,16 @@ class MessageRepo:
         await self.db.refresh(m)
         return m
 
+    async def count_messages(self, project_id: uuid.UUID) -> int:
+        """
+        Count total messages for a project.
+        Efficient method that only counts, doesn't fetch data.
+        """
+        result = await self.db.execute(
+            select(func.count(Message.id)).where(Message.project_id == project_id)
+        )
+        return result.scalar_one()
+
     async def get_paginated(
         self,
         project_id: uuid.UUID,

@@ -59,3 +59,13 @@ class SendMessageResponse(BModel):
     thread_id: str
     status: str
     stream_url: str
+    
+class DeployConfirmRequest(BModel):
+    """
+    Plaintext credentials decrypted in the browser.
+    Sent over HTTPS only. Never stored in DB.
+    """
+    plaintext_vars:          dict[str, str]   # user's app env vars
+    render_api_key:          str = ""         # decrypted Render key (if using Render)
+    railway_api_key:         str = ""         # decrypted Railway key (if using Railway)
+    deploy_provider:         str = "render"   # "render" | "railway"

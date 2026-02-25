@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { Urbanist, JetBrains_Mono } from "next/font/google";
-import { SessionProvider } from "@/components/providers/session-provider";
+import { SessionProvider } from "@/providers/session-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
+import { ProjectDialogProvider } from "@/providers/project-dialouge-provider";
 
 const urbanist = Urbanist({
   variable: "--font-urbanist",
@@ -34,9 +35,11 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <SessionProvider>
-            <TooltipProvider>
-              {children}
-            </TooltipProvider>
+            <ProjectDialogProvider>
+              <TooltipProvider>
+                {children}
+              </TooltipProvider>
+            </ProjectDialogProvider>
           </SessionProvider>
         </ThemeProvider>
       </body>

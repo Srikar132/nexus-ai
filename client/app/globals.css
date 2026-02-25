@@ -175,7 +175,7 @@
   body {
     @apply bg-background text-foreground;
     font-family:
-      var(--font-inter),
+      var(--font-urbanist),
       system-ui,
       -apple-system,
       sans-serif;
