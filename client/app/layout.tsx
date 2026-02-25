@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Urbanist, JetBrains_Mono } from "next/font/google";
 import { SessionProvider } from "@/components/providers/session-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 
-const inter = Inter({
-  variable: "--font-inter",
+const urbanist = Urbanist({
+  variable: "--font-urbanist",
   subsets: ["latin"],
   display: "swap",
 });
@@ -30,7 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
+        className={`${urbanist.variable} ${jetbrainsMono.variable} antialiased`}
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <SessionProvider>
