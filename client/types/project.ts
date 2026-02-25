@@ -7,18 +7,18 @@ export interface Project {
   id: string; // UUID
   name: string;
   description?: string | null;
-  
+
   // Status and metadata
   status: string; // "active" | "deleted" etc.
   stack?: Record<string, any> | null;
-  
+
   // Git & Deployment
   repo_url?: string | null;
   latest_deploy_url?: string | null;
-  
+
   // LangGraph integration
   langgraph_thread_id?: string | null;
-  
+
   // Timestamps
   created_at: string; // ISO date string
   updated_at: string; // ISO date string
@@ -60,4 +60,5 @@ export interface ProjectListResponse {
 export interface ProjectListParams {
   page?: number;
   limit?: number;
+  status?: string;
 }

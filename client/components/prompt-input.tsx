@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, ArrowUpRight, Lightbulb, Loader2, Mic } from "lucide-react";
-import { AttachMenuDialog } from "./attach-menu-dialog";
+import { ArrowUpRight, Lightbulb, Loader2, Mic } from "lucide-react";
+import { AttachMenu } from "./attach-menu-dialog";
 import { Button } from "@/components/ui/button";
-import projectServices from "@/lib/services/project-services";
 import { useVoiceRecording } from "@/hooks/use-voice-recording";
 import { QuickStart } from "./quick-start";
 import { useProjectDialog } from "@/providers/project-dialouge-provider";
@@ -85,9 +84,8 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
 
-  // Attach menu dialog state
-  const [attachOpen, setAttachOpen] = useState(false);
-  const attachBtnRef = useRef<HTMLButtonElement>(null);
+  // Web search state
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
 
   // Auto-resize textarea as content grows
   const autoResize = useCallback(() => {
@@ -190,17 +188,14 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
 
           {/* Left — attach + mic */}
           <div className="flex items-center gap-1">
-            <Button
-              ref={attachBtnRef}
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-xl"
-              onClick={() => setAttachOpen(true)}
-              aria-label="Open attach menu"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <AttachMenuDialog open={attachOpen} onOpenChange={setAttachOpen} anchorEl={attachBtnRef.current} />
+            <AttachMenu
+              webSearchEnabled={webSearchEnabled}
+              onWebSearchToggle={setWebSearchEnabled}
+              onFileSelect={(files) => {
+                // Handle file selection
+                console.log("Selected files:", files);
+              }}
+            />
 
             {/* Mic button with pulse ring */}
             <div className="relative flex items-center justify-center h-8 w-8">

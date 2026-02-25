@@ -1,90 +1,81 @@
 "use client";
 
-import { X, Paperclip, Camera, Globe } from "lucide-react";
 import { useRef } from "react";
+import { Paperclip, Globe, Plus } from "lucide-react";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuCheckboxItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
 
-const MENU_ITEMS = [
-    { icon: Paperclip, label: "Add files or photos", action: "file" },
-    { icon: Globe, label: "Web search", check: true },
-];
+interface AttachMenuProps {
+    onFileSelect?: (files: FileList) => void;
+    webSearchEnabled?: boolean;
+    onWebSearchToggle?: (enabled: boolean) => void;
+}
 
-export function AttachMenuDialog({ open, onOpenChange, anchorEl }: { open: boolean; onOpenChange: (v: boolean) => void; anchorEl?: HTMLElement | null }) {
+export function AttachMenu({
+    onFileSelect,
+    webSearchEnabled = true,
+    onWebSearchToggle,
+}: AttachMenuProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    function handleMenuClick(item: any) {
-        if (item.action === "file") {
-            fileInputRef.current?.click();
-            return;
-        }
-        if (item.action === "screenshot") {
-            alert("Screenshot functionality is not implemented in this demo.");
-            onOpenChange(false);
-            return;
-        }
-        onOpenChange(false);
+    function handleFileClick() {
+        fileInputRef.current?.click();
     }
 
     function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
         const files = e.target.files;
         if (files && files.length > 0) {
-            // Handle file upload logic here
-            alert(`Selected file: ${files[0].name}`);
+            onFileSelect?.(files);
         }
-        onOpenChange(false);
+        // Reset input so same file can be selected again
+        e.target.value = "";
     }
 
     return (
-        open && (
-            <div
-                className="fixed z-50"
-                style={anchorEl ? {
-                    top: anchorEl.getBoundingClientRect().bottom + 8 + window.scrollY,
-                    left: anchorEl.getBoundingClientRect().left + window.scrollX,
-                } : {}}
-            >
-                <div className="w-64 p-0 bg-popover border border-border rounded-xl shadow-xl overflow-hidden animate-in fade-in-0 slide-in-from-top-2 relative">
-                    {/* X button */}
-                    <button
-                        className="absolute top-2 right-2 p-1 rounded-md hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={() => onOpenChange(false)}
-                        aria-label="Close"
-                        tabIndex={0}
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-                    {/* Hidden file input */}
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        className="hidden"
-                        onChange={handleFileChange}
-                        multiple={false}
-                    />
-                    <div className="py-2">
-                        {MENU_ITEMS.map((item, i) =>
-                            item.divider ? (
-                                <div key={i} className="my-1 border-t border-border" />
-                            ) : (
-                                <button
-                                    key={item.label}
-                                    className={`
-                    flex items-center w-full px-4 py-2 text-sm text-foreground hover:bg-accent transition-colors
-                    ${item.check ? "justify-between" : ""}
-                  `}
-                                    tabIndex={0}
-                                    onClick={() => handleMenuClick(item)}
-                                >
-                                    <span className="flex items-center gap-2">
-                                        <item.icon className="h-4 w-4" />
-                                        {item.label}
-                                    </span>
-                                    {item.check && <span className="text-primary">✔</span>}
-                                </button>
-                            )
-                        )}
-                    </div>
-                </div>
-            </div>
-        )
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-xl"
+                    aria-label="Open attach menu"
+                >
+                    <Plus className="h-4 w-4" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+                {/* Hidden file input */}
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={handleFileChange}
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx,.txt,.md"
+                />
+
+                <DropdownMenuItem onClick={handleFileClick}>
+                    <Paperclip className="h-4 w-4" />
+                    <span>Add files or photos</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator />
+
+                <DropdownMenuCheckboxItem
+                    checked={webSearchEnabled}
+                    onCheckedChange={onWebSearchToggle}
+                >
+                    <Globe className="h-4 w-4" />
+                    <span>Web search</span>
+                </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
     );
 }

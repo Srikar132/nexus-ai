@@ -88,15 +88,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const handleLogout = React.useCallback(
     async () => {
-        setIsLoggingOut(true)
-        try {
-          await signOut({ redirectTo: "/" });
-        } catch (error) {
-          console.error("Logout error:", error)
-        } finally {
-          setIsLoggingOut(false)
-          setOpen(false)
-        }
+      setIsLoggingOut(true)
+      try {
+        await signOut({ redirectTo: "/" });
+      } catch (error) {
+        console.error("Logout error:", error)
+      } finally {
+        setIsLoggingOut(false)
+        setOpen(false)
+      }
     },
     []
   );
@@ -108,8 +108,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link href="/home" className="flex items-center gap-2">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg text-sidebar-primary-foreground">
-                  <Image width={86} height={86} src="/images/logo.png" alt="Nexus AI Logo" />
+                <div className="flex aspect-square size-8 min-w-8 min-h-8 items-center justify-center rounded-lg text-sidebar-primary-foreground">
+                  <Image width={86} height={86} src="/images/logo.png" alt="Nexus AI Logo" className="size-8 object-contain" />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">Nexus AI</span>
