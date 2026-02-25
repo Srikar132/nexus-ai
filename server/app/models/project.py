@@ -31,3 +31,4 @@ class Project(Base):
     messages: Mapped[list["Message"]] = relationship("Message", back_populates="project", order_by="Message.created_at")
     builds: Mapped[list["Build"]] = relationship("Build", back_populates="project")
     artifacts: Mapped[list["Artifact"]] = relationship("Artifact", back_populates="project")
+    env_vars: Mapped[list["ProjectEnvVar"]] = relationship("ProjectEnvVar", back_populates="project")

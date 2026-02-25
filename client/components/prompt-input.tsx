@@ -7,7 +7,7 @@ import { AttachMenu } from "./attach-menu-dialog";
 import { Button } from "@/components/ui/button";
 import { useVoiceRecording } from "@/hooks/use-voice-recording";
 import { QuickStart } from "./quick-start";
-import { useProjectDialog } from "@/providers/project-dialouge-provider";
+import { useProjectDialog } from "@/providers/project-dialog-provider";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PLACEHOLDER_PHRASES = [
@@ -69,7 +69,6 @@ function useTypingPlaceholder(phrases: string[]) {
 
 function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string) => void) => void }) {
   const [value, setValue] = useState("");
-  const { open } = useProjectDialog();
 
   useEffect(() => {
     onExternalPrompt?.((prompt) => {
@@ -81,6 +80,7 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
   const [isBuilding, setIsBuilding] = useState(false);
 
   const placeholder = useTypingPlaceholder(PLACEHOLDER_PHRASES);
+  const { open } = useProjectDialog();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
 
@@ -122,7 +122,9 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
       // );
 
       // router.push(`/project/${project.id}`);
+
       open();
+  
     } catch (error) {
       console.error("Failed to create project:", error);
     } finally {

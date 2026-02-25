@@ -8,7 +8,7 @@ No hardcoded sequences — agent reasons about each error and recovers.
 import time
 import requests
 from langchain_core.tools import tool
-from app.config import settings
+from app.core.config import settings
 from app.core.docker_manager import DockerManager
 
 

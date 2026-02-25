@@ -8,6 +8,8 @@ class ProjectCreate(BModel):
     """Schema for creating a new project."""
     name: str
     description: str | None = None
+    
+    user_prompt : str | None = None
 
 
 class ProjectUpdate(BModel):
@@ -62,10 +64,9 @@ class SendMessageResponse(BModel):
     
 class DeployConfirmRequest(BModel):
     """
-    Plaintext credentials decrypted in the browser.
-    Sent over HTTPS only. Never stored in DB.
+    User submits only their app environment variables.
+    Platform credentials (GitHub token, Railway key) are fetched
+    server-side from encrypted DB columns — never sent from browser.
     """
-    plaintext_vars:          dict[str, str]   # user's app env vars
-    render_api_key:          str = ""         # decrypted Render key (if using Render)
-    railway_api_key:         str = ""         # decrypted Railway key (if using Railway)
-    deploy_provider:         str = "render"   # "render" | "railway"
+    plaintext_vars:  dict[str, str]   # user's app env vars (STRIPE_KEY, DATABASE_URL etc.)
+    deploy_provider: str = "railway"  # "railway" (only supported provider currently)

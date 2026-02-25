@@ -4,7 +4,7 @@ import { SessionProvider } from "@/providers/session-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
-import { ProjectDialogProvider } from "@/providers/project-dialouge-provider";
+import { ProjectDialogProvider } from "@/providers/project-dialog-provider";
 
 const urbanist = Urbanist({
   variable: "--font-urbanist",
@@ -35,11 +35,11 @@ export default function RootLayout({
       >
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <SessionProvider>
-            <ProjectDialogProvider>
-              <TooltipProvider>
+            <TooltipProvider>
+              <ProjectDialogProvider>
                 {children}
-              </TooltipProvider>
-            </ProjectDialogProvider>
+              </ProjectDialogProvider>
+            </TooltipProvider>
           </SessionProvider>
         </ThemeProvider>
       </body>

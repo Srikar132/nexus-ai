@@ -1,131 +1,134 @@
 """
-agents/rag.py
+agents/rag/service.py
 
-RAG (Retrieval Augmented Generation) for agent context.
+ProjectRAG — the main entry point for all RAG operations.
 
-Indexes the current project's files so all 3 agents can
-retrieve relevant code context without reading the full codebase.
+Replaces the original in-memory ProjectRAG class with identical public API:
+  - index_file(file_path, content)
+  - retrieve(query, top_k) → str
+  - get_file_tree() → str
 
-Storage: In-memory for simplicity (use ChromaDB / pgvector in production).
-
-Flow:
-  1. Artificer writes a file → index_file() adds it to RAG
-  2. Any agent calls retrieve() with a query
-  3. RAG returns the most relevant code snippets
-  4. Agent includes them in its context window
+Drop-in replacement: agents call the same methods, get the same output format.
 """
-import hashlib
-from dataclasses import dataclass
-from typing import Optional
-import anthropic
-from app.core.config import settings
+from .embedder import embed_texts, embed_query
+from app.repositories.rag_repository import ChunkRepository, create_pool
 
-client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-
-
-@dataclass
-class CodeChunk:
-    file_path:  str
-    content:    str
-    start_line: int
-    end_line:   int
+_CHUNK_SIZE = 50  # lines per chunk — matches original behavior
 
 
 class ProjectRAG:
     """
-    Simple in-memory RAG for one project's codebase.
-    One instance per build — lives in the Celery worker memory.
+    Production RAG backed by Neon Postgres + pgvector.
 
-    For production: swap _store with ChromaDB or pgvector.
+    Lifecycle (in a Celery worker or FastAPI startup):
+        rag = await ProjectRAG.create(project_id, dsn)
+        await rag.index_file("main.py", source_code)
+        context = await rag.retrieve("how does auth work?")
+
+    The pool is shared across all operations. Call close() on shutdown.
     """
 
-    def __init__(self, project_id: str):
+    def __init__(self, project_id: str, repo: ChunkRepository):
         self.project_id = project_id
-        self._chunks: list[CodeChunk]     = []
-        self._embeddings: list[list[float]] = []
+        self._repo = repo
 
-    def index_file(self, file_path: str, content: str):
+    @classmethod
+    async def create(cls, project_id: str, dsn: str) -> "ProjectRAG":
         """
-        Called by Artificer after writing a file.
-        Splits file into chunks and indexes them.
+        Async factory. Creates DB pool, ensures schema, returns ready instance.
+        Call this once per project per worker process.
         """
-        chunks = self._split_into_chunks(file_path, content)
-        for chunk in chunks:
-            embedding = self._embed(chunk.content)
-            self._chunks.append(chunk)
-            self._embeddings.append(embedding)
+        pool = await create_pool(dsn)
+        repo = ChunkRepository(pool)
+        await repo.ensure_schema()
+        return cls(project_id, repo)
 
-    def retrieve(self, query: str, top_k: int = 5) -> str:
+    async def close(self) -> None:
+        """Close the connection pool. Call on worker shutdown."""
+        await self._repo._pool.close()
+
+    # ── Public API (matches original ProjectRAG exactly) ─────────────────────
+
+    async def index_file(self, file_path: str, content: str) -> None:
         """
-        Returns formatted context string with most relevant code chunks.
-        Agents pass this as part of their prompt.
+        Index a file into the vector store.
+
+        Steps:
+          1. Delete any existing chunks for this file (handles re-indexing)
+          2. Split content into ~50-line chunks
+          3. Batch-generate embeddings for all chunks at once
+          4. Batch-insert into DB
+
+        This is async-safe: each Celery task gets its own pool connection.
         """
-        if not self._chunks:
+        chunks = _split_into_chunks(file_path, content, _CHUNK_SIZE)
+        if not chunks:
+            return
+
+        # Step 1: clear stale chunks for this file
+        await self._repo.delete_file_chunks(self.project_id, file_path)
+
+        # Step 2: batch embed all chunks in one model call
+        texts = [c["content"] for c in chunks]
+        embeddings = embed_texts(texts)  # list[list[float]], same order as texts
+
+        # Step 3: attach embeddings to chunk dicts
+        for chunk, embedding in zip(chunks, embeddings):
+            chunk["embedding"] = embedding
+
+        # Step 4: batch insert
+        await self._repo.insert_chunks(self.project_id, file_path, chunks)
+
+    async def retrieve(self, query: str, top_k: int = 5) -> str:
+        """
+        Retrieve top-k relevant code chunks for a query.
+        Returns formatted context string identical to the original implementation.
+        """
+        # Embed query (single vector)
+        query_vec = embed_query(query)
+
+        # Vector similarity search in DB
+        results = await self._repo.similarity_search(
+            self.project_id, query_vec, top_k
+        )
+
+        if not results:
             return "No codebase context available yet."
 
-        query_embedding = self._embed(query)
-        scores = [
-            self._cosine_similarity(query_embedding, emb)
-            for emb in self._embeddings
+        # Format output — identical to original ProjectRAG.retrieve()
+        parts = [
+            f"### {r.file_path} (lines {r.start_line}-{r.end_line})\n"
+            f"```\n{r.content}\n```"
+            for r in results
         ]
+        return "\n\n".join(parts)
 
-        # Get top-k chunks by similarity score
-        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
+    async def get_file_tree(self) -> str:
+        """Returns sorted list of indexed file paths, one per line."""
+        files = await self._repo.get_indexed_files(self.project_id)
+        return "\n".join(files) if files else "(no files indexed)"
 
-        result_parts = []
-        for idx in top_indices:
-            chunk = self._chunks[idx]
-            result_parts.append(
-                f"### {chunk.file_path} (lines {chunk.start_line}-{chunk.end_line})\n"
-                f"```\n{chunk.content}\n```"
-            )
 
-        return "\n\n".join(result_parts)
+# ── Private helpers ───────────────────────────────────────────────────────────
 
-    def get_file_tree(self) -> str:
-        """Returns a simple file tree string for agent context"""
-        files = list({c.file_path for c in self._chunks})
-        return "\n".join(sorted(files))
-
-    # ── Private helpers ───────────────────────────────────────────
-
-    def _split_into_chunks(self, file_path: str, content: str, chunk_size: int = 50) -> list[CodeChunk]:
-        """Split file into chunks of ~50 lines each"""
-        lines  = content.split("\n")
-        chunks = []
-        for start in range(0, len(lines), chunk_size):
-            end         = min(start + chunk_size, len(lines))
-            chunk_text  = "\n".join(lines[start:end])
-            chunks.append(CodeChunk(
-                file_path  = file_path,
-                content    = chunk_text,
-                start_line = start + 1,
-                end_line   = end
-            ))
-        return chunks
-
-    def _embed(self, text: str) -> list[float]:
-        """
-        Get embedding vector from Anthropic.
-        NOTE: Anthropic doesn't have embeddings API yet.
-        Use OpenAI embeddings or a local model like sentence-transformers.
-
-        For now using a simple hash-based mock — replace in production.
-        """
-        # ── PRODUCTION: use sentence-transformers ──────────────────
-        # from sentence_transformers import SentenceTransformer
-        # model = SentenceTransformer("all-MiniLM-L6-v2")
-        # return model.encode(text).tolist()
-        # ──────────────────────────────────────────────────────────
-
-        # Mock embedding for development
-        h = hashlib.md5(text.encode()).digest()
-        return [b / 255.0 for b in h]  # 16-dim mock vector
-
-    def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
-        dot     = sum(x * y for x, y in zip(a, b))
-        norm_a  = sum(x ** 2 for x in a) ** 0.5
-        norm_b  = sum(x ** 2 for x in b) ** 0.5
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot / (norm_a * norm_b)
+def _split_into_chunks(
+    file_path: str,
+    content: str,
+    chunk_size: int,
+) -> list[dict]:
+    """
+    Split file content into chunks of `chunk_size` lines.
+    Returns plain dicts — embedding is added later by index_file().
+    """
+    lines = content.split("\n")
+    chunks = []
+    for start in range(0, len(lines), chunk_size):
+        end = min(start + chunk_size, len(lines))
+        chunks.append(
+            {
+                "content": "\n".join(lines[start:end]),
+                "start_line": start + 1,
+                "end_line": end,
+            }
+        )
+    return chunks

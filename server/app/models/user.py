@@ -18,6 +18,9 @@ class User(Base):
     # Store encrypted GitHub token for future API calls
     github_token_encrypted = Column(Text, nullable=True)
 
+    # Store encrypted Railway API key for deployments
+    railway_api_key_encrypted = Column(Text, nullable=True)
+
     # user's preferences
     preferred_stack = Column(String(100), nullable=True)        # -- nextjs, fastapi, node, etc.
     preferred_language = Column(String(50), nullable=True)      # -- python, typescript
