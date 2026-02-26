@@ -117,11 +117,23 @@ export function useWorkflow(projectId: string) {
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
 
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const url = `${API_BASE}/api/v1/projects/${projectId}/messages/stream`;
-    console.log("[SSE] Connecting:", url);
+    // Use Next.js rewrite proxy by default for same-origin SSE (avoids CORS issues)
+    // Falls back to direct FastAPI connection if needed
+    const USE_PROXY = true; // Set to false if you experience SSE buffering issues
+    
+    let url: string;
+    if (USE_PROXY) {
+      // Same-origin via Next.js rewrite - no CORS issues, cookies sent automatically
+      url = `/api/v1/projects/${projectId}/messages/stream`;
+      console.log("[SSE] Connecting via Next.js proxy:", url);
+    } else {
+      // Direct to FastAPI - requires CORS configuration
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      url = `${API_BASE}/api/v1/projects/${projectId}/messages/stream`;
+      console.log("[SSE] Connecting directly to FastAPI:", url);
+    }
 
-    const es = new EventSource(url, { withCredentials: true });
+    const eventSource = new EventSource(url, USE_PROXY ? {} : { withCredentials: true });
 
     es.onopen = () => console.log("[SSE] Opened");
 
