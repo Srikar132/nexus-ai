@@ -57,55 +57,63 @@
   --radius: 0.75rem;
 
   /* Core surfaces — Gemini light: very slightly cool off-white (zinc feel) */
-  --background:    oklch(0.975 0.002 265);   /* #f8f9fa zinc-white */
-  --foreground:    oklch(0.15  0.006 265);   /* #202124 cool dark text */
+  --background: oklch(0.975 0.002 265);
+  /* #f8f9fa zinc-white */
+  --foreground: oklch(0.15 0.006 265);
+  /* #202124 cool dark text */
 
   /* Cards — pure white with zinc undertone */
-  --card:          oklch(1     0     0);
+  --card: oklch(1 0 0);
   --card-foreground: oklch(0.15 0.006 265);
 
-  --popover:       oklch(1     0     0);
+  --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.15 0.006 265);
 
   /* Primary — Google Blue */
-  --primary:       oklch(0.52  0.18  258);   /* #1a73e8 Google blue */
+  --primary: oklch(0.52 0.18 258);
+  /* #1a73e8 Google blue */
   --primary-foreground: oklch(1 0 0);
 
   /* Secondary — zinc chip/pill */
-  --secondary:     oklch(0.92  0.004 265);   /* #e8eaed zinc-gray */
+  --secondary: oklch(0.92 0.004 265);
+  /* #e8eaed zinc-gray */
   --secondary-foreground: oklch(0.20 0.006 265);
 
   /* Muted */
-  --muted:         oklch(0.93  0.003 265);
-  --muted-foreground: oklch(0.46 0.008 265); /* #5f6368 */
+  --muted: oklch(0.93 0.003 265);
+  --muted-foreground: oklch(0.46 0.008 265);
+  /* #5f6368 */
 
   /* Accent — zinc hover */
-  --accent:        oklch(0.91  0.005 265);
+  --accent: oklch(0.91 0.005 265);
   --accent-foreground: oklch(0.15 0.006 265);
 
-  --destructive:   oklch(0.55  0.22  25);
+  --destructive: oklch(0.55 0.22 25);
 
   /* Borders — zinc dividers */
-  --border:        oklch(0.87  0.004 265);   /* #dadce0 */
-  --input:         oklch(0.92  0.003 265);
-  --ring:          oklch(0.52  0.18  258);
+  --border: oklch(0.87 0.004 265);
+  /* #dadce0 */
+  --input: oklch(0.92 0.003 265);
+  --ring: oklch(0.52 0.18 258);
 
   /* Charts */
-  --chart-1: oklch(0.52  0.18  258);
-  --chart-2: oklch(0.55  0.20  145);
-  --chart-3: oklch(0.70  0.18  80);
-  --chart-4: oklch(0.55  0.22  25);
-  --chart-5: oklch(0.60  0.15  295);
+  --chart-1: oklch(0.52 0.18 258);
+  --chart-2: oklch(0.55 0.20 145);
+  --chart-3: oklch(0.70 0.18 80);
+  --chart-4: oklch(0.55 0.22 25);
+  --chart-5: oklch(0.60 0.15 295);
 
   /* Sidebar — Gemini light: clean zinc-white panel */
-  --sidebar:       oklch(0.965 0.003 265);   /* #f1f3f4 zinc sidebar */
+  --sidebar: oklch(0.965 0.003 265);
+  /* #f1f3f4 zinc sidebar */
   --sidebar-foreground: oklch(0.20 0.006 265);
   --sidebar-primary: oklch(0.52 0.18 258);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.88 0.006 265);   /* zinc hover */
+  --sidebar-accent: oklch(0.88 0.006 265);
+  /* zinc hover */
   --sidebar-accent-foreground: oklch(0.15 0.006 265);
   --sidebar-border: oklch(0.87 0.004 265);
-  --sidebar-ring:  oklch(0.52 0.18 258);
+  --sidebar-ring: oklch(0.52 0.18 258);
 }
 
 /* =============================================
@@ -114,56 +122,72 @@
    ============================================= */
 .dark {
   /* Core background — Gemini's near-black zinc base */
-  --background:    oklch(0.115 0.005 265);   /* #131314 — barely-cool zinc-black */
-  --foreground:    oklch(0.905 0.005 265);   /* #e3e4e6 — cool zinc-white text */
+  --background: oklch(0.115 0.005 265);
+  /* #131314 — barely-cool zinc-black */
+  --foreground: oklch(0.905 0.005 265);
+  /* #e3e4e6 — cool zinc-white text */
 
   /* Cards — zinc-dark elevated surface (#1e1e21) */
-  --card:          oklch(0.155 0.006 265);   /* #1e1e21 zinc card */
+  --card: oklch(0.155 0.006 265);
+  /* #1e1e21 zinc card */
   --card-foreground: oklch(0.905 0.005 265);
 
   /* Popover / dropdown — slightly lighter zinc (#26262a) */
-  --popover:       oklch(0.185 0.007 265);   /* #26262a */
+  --popover: oklch(0.185 0.007 265);
+  /* #26262a */
   --popover-foreground: oklch(0.905 0.005 265);
 
   /* Primary — Google blue for links & active states */
-  --primary:       oklch(0.72  0.14  258);   /* #8ab4f8 */
+  --primary: oklch(0.72 0.14 258);
+  /* #8ab4f8 */
   --primary-foreground: oklch(0.115 0.005 265);
 
   /* Secondary — zinc chip surface (#2a2a2e) */
-  --secondary:     oklch(0.215 0.007 265);   /* #2a2a2e */
+  --secondary: oklch(0.215 0.007 265);
+  /* #2a2a2e */
   --secondary-foreground: oklch(0.86 0.005 265);
 
   /* Muted — zinc input/code bg (#1e1e21) */
-  --muted:         oklch(0.155 0.006 265);   /* same as card */
-  --muted-foreground: oklch(0.565 0.008 265); /* #8e8e93 zinc muted */
+  --muted: oklch(0.155 0.006 265);
+  /* same as card */
+  --muted-foreground: oklch(0.565 0.008 265);
+  /* #8e8e93 zinc muted */
 
   /* Accent — sidebar hover: desaturated steel pill (#2a3a5c) */
-  --accent:        oklch(0.275 0.028 265);   /* #2a2d33 zinc-blue hover */
+  --accent: oklch(0.275 0.028 265);
+  /* #2a2d33 zinc-blue hover */
   --accent-foreground: oklch(0.905 0.005 265);
 
-  --destructive:   oklch(0.65  0.22  25);
+  --destructive: oklch(0.65 0.22 25);
 
   /* Borders — zinc dividers (#3a3a3d), very subtle */
-  --border:        oklch(0.275 0.007 265);   /* #3a3a3d */
-  --input:         oklch(0.195 0.007 265);   /* #26262a — input bg same as popover */
-  --ring:          oklch(0.72  0.14  258);   /* Google blue focus */
+  --border: oklch(0.275 0.007 265);
+  /* #3a3a3d */
+  --input: oklch(0.195 0.007 265);
+  /* #26262a — input bg same as popover */
+  --ring: oklch(0.72 0.14 258);
+  /* Google blue focus */
 
   /* Charts */
-  --chart-1: oklch(0.72  0.14  258);
-  --chart-2: oklch(0.70  0.18  145);
-  --chart-3: oklch(0.80  0.18  85);
-  --chart-4: oklch(0.65  0.22  25);
-  --chart-5: oklch(0.68  0.16  295);
+  --chart-1: oklch(0.72 0.14 258);
+  --chart-2: oklch(0.70 0.18 145);
+  --chart-3: oklch(0.80 0.18 85);
+  --chart-4: oklch(0.65 0.22 25);
+  --chart-5: oklch(0.68 0.16 295);
 
   /* Sidebar — #1c1c1f zinc-charcoal, slightly darker than card */
-  --sidebar:       oklch(0.138 0.006 265);   /* #1c1c1f Gemini sidebar */
-  --sidebar-foreground: oklch(0.86  0.005 265);
-  --sidebar-primary: oklch(0.72  0.14  258); /* Google blue active text */
+  --sidebar: oklch(0.138 0.006 265);
+  /* #1c1c1f Gemini sidebar */
+  --sidebar-foreground: oklch(0.86 0.005 265);
+  --sidebar-primary: oklch(0.72 0.14 258);
+  /* Google blue active text */
   --sidebar-primary-foreground: oklch(0.115 0.005 265);
-  --sidebar-accent: oklch(0.225 0.015 265);  /* active item bg — zinc hover pill */
+  --sidebar-accent: oklch(0.225 0.015 265);
+  /* active item bg — zinc hover pill */
   --sidebar-accent-foreground: oklch(0.905 0.005 265);
-  --sidebar-border: oklch(0.225 0.006 265);  /* barely-there zinc border */
-  --sidebar-ring:  oklch(0.72  0.14  258);
+  --sidebar-border: oklch(0.225 0.006 265);
+  /* barely-there zinc border */
+  --sidebar-ring: oklch(0.72 0.14 258);
 }
 
 /* =============================================
@@ -208,14 +232,13 @@
    UTILITIES
    ============================================= */
 @layer utilities {
+
   /* Gemini-style Google blue gradient */
   .custom-gradient {
-    background-image: linear-gradient(
-      135deg,
-      #1a73e8 0%,
-      #4285f4 50%,
-      #8ab4f8 100%
-    );
+    background-image: linear-gradient(135deg,
+        #1a73e8 0%,
+        #4285f4 50%,
+        #8ab4f8 100%);
   }
 
   .gradient-text {
@@ -229,13 +252,13 @@
 
   /* Glow effects — Google blue glow like Gemini focus states */
   .glow-cyan {
-    box-shadow: 
+    box-shadow:
       0 0 20px oklch(0.72 0.14 258 / 25%),
       0 0 40px oklch(0.72 0.14 258 / 12%);
   }
 
   .glow-cyan-strong {
-    box-shadow: 
+    box-shadow:
       0 0 30px oklch(0.72 0.14 258 / 35%),
       0 0 60px oklch(0.72 0.14 258 / 18%),
       0 0 90px oklch(0.72 0.14 258 / 8%);
@@ -252,6 +275,7 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
@@ -261,25 +285,29 @@
     scrollbar-width: thin;
     scrollbar-color: oklch(0.72 0.14 258 / 30%) transparent;
   }
+
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
+
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
+
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: oklch(0.72 0.14 258 / 30%);
     border-radius: 999px;
     transition: background 0.2s ease;
   }
+
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background: oklch(0.72 0.14 258 / 55%);
   }
 
   /* Subtle dot grid — Gemini-like */
   .tech-grid {
-    background-image: 
+    background-image:
       linear-gradient(oklch(0.72 0.14 258 / 5%) 1px, transparent 1px),
       linear-gradient(90deg, oklch(0.72 0.14 258 / 5%) 1px, transparent 1px);
     background-size: 50px 50px;
@@ -287,30 +315,35 @@
 
   /* Animated border — Google blue shimmer */
   @keyframes border-flow {
-    0%, 100% { 
-      background-position: 0% 50%; 
+
+    0%,
+    100% {
+      background-position: 0% 50%;
     }
-    50% { 
-      background-position: 100% 50%; 
+
+    50% {
+      background-position: 100% 50%;
     }
   }
 
   .animated-border {
     position: relative;
-    background: linear-gradient(90deg, 
-      oklch(0.52 0.18 258),
-      oklch(0.72 0.14 258),
-      oklch(0.52 0.18 258)
-    );
+    background: linear-gradient(90deg,
+        oklch(0.52 0.18 258),
+        oklch(0.72 0.14 258),
+        oklch(0.52 0.18 258));
     background-size: 200% 200%;
     animation: border-flow 3s ease infinite;
   }
 
   /* Pulse animation for live indicators */
   @keyframes pulse-cyan {
-    0%, 100% {
+
+    0%,
+    100% {
       opacity: 1;
     }
+
     50% {
       opacity: 0.5;
     }
@@ -318,5 +351,118 @@
 
   .animate-pulse-cyan {
     animation: pulse-cyan 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* =============================================
+     HERO — Lightweight background & animations
+     (No background-position animation — uses static
+      multi-gradient + GPU-composited orbs for motion)
+     ============================================= */
+
+  .hero-mesh-gradient {
+    background:
+      radial-gradient(ellipse 80% 60% at 10% 20%, oklch(0.52 0.18 258 / 10%) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 70% at 80% 15%, oklch(0.60 0.15 295 / 8%) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 50% at 50% 80%, oklch(0.72 0.14 258 / 6%) 0%, transparent 60%),
+      var(--background);
+  }
+
+  /* Heading gradient — primary-based */
+  .hero-gradient-text {
+    background: linear-gradient(135deg, #4285f4 0%, #8ab4f8 40%, #4285f4 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Floating orb animations — GPU-composited transforms only */
+  @keyframes hero-orb-float-1 {
+
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0);
+    }
+
+    33% {
+      transform: translate3d(15px, -30px, 0);
+    }
+
+    66% {
+      transform: translate3d(-10px, 15px, 0);
+    }
+  }
+
+  @keyframes hero-orb-float-2 {
+
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0);
+    }
+
+    33% {
+      transform: translate3d(-20px, 20px, 0);
+    }
+
+    66% {
+      transform: translate3d(10px, -25px, 0);
+    }
+  }
+
+  @keyframes hero-orb-float-3 {
+
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0);
+    }
+
+    50% {
+      transform: translate3d(20px, -20px, 0);
+    }
+  }
+
+  .hero-orb-1 {
+    animation: hero-orb-float-1 12s ease-in-out infinite;
+  }
+
+  .hero-orb-2 {
+    animation: hero-orb-float-2 16s ease-in-out infinite;
+  }
+
+  .hero-orb-3 {
+    animation: hero-orb-float-3 14s ease-in-out infinite;
+  }
+
+  /* Pipeline flow — GPU-composited */
+  @keyframes pipeline-slide {
+    0% {
+      transform: translateX(-100%);
+    }
+
+    100% {
+      transform: translateX(300%);
+    }
+  }
+
+  .pipeline-flow {
+    animation: pipeline-slide 2s ease-in-out infinite;
+  }
+
+  /* Squad dot pulse */
+  @keyframes squad-dot-pulse {
+
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    50% {
+      opacity: .5;
+      transform: scale(.85);
+    }
+  }
+
+  .squad-pulse {
+    animation: squad-dot-pulse 2.5s ease-in-out infinite;
   }
 }
