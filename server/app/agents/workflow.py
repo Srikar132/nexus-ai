@@ -139,6 +139,7 @@ All credential fetching happens in the worker (build_worker.py).
 
 import json
 import uuid
+import re
 import time
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
@@ -155,6 +156,7 @@ from app.agents.react import run_react_agent
 from app.agents.tools.docker_tools import get_docker_tools
 from app.agents.tools.security_tools import get_security_tools
 from app.agents.tools.deploy_tools import get_deploy_tools
+from app.schemas.enums import WorkflowStage, MessageType
 
 # Initialize LLM - can easily switch models here
 llm = get_llm("llama-3.1-8b")  # or "gpt-4o", "claude-3-opus", etc.
@@ -172,27 +174,26 @@ class GraphState(TypedDict):
 
     # Conversation (conductor context window)
     chat_history:         list[dict]   # [{role, content}] last 40 exchanges
-    
-    # Current user input — set by interrupt resume value from build_task.py
-    # On first run: set directly in initial_state as {"message": "...", "message_type": "chat"}
-    # On resume: set by Command(resume={"message": "...", "message_type": "..."})
-    current_user_input:   Optional[dict]  # {"message": str, "message_type": str}
 
-    # Plan — current_plan and approved_plan both store only the "content" dict from plan artifacts
-    # (NOT the full artifact wrapper with "artifact_type" and "title")
-    current_plan:  Optional[dict]  # Pending plan content, not yet approved
-    approved_plan: Optional[dict]  # Approved plan content, used by artificer/guardian/deployer
+    # Current user input — set by interrupt resume value from build_task.py
+    # Shape: {"message": str, "message_type": str, "edited_plan"?: dict}
+    # message_type is one of: "request_plan", "direct_build", "approval",
+    #   "edit_plan", "chat"
+    current_user_input:   Optional[dict]
+
+    # Plan — stores only the "content" dict (NOT the full artifact wrapper)
+    current_plan:  Optional[dict]  # Pending plan, not yet approved
+    approved_plan: Optional[dict]  # Approved plan, used by artificer/guardian/deployer
 
     # Build runtime
     app_url: Optional[str]   # URL where app runs for Guardian to attack
 
     # Security loop
     security_iteration:  int
-    security_issues:     list[dict]   # current round issues (cleared after each fix)
-    all_security_issues: list[dict]   # cumulative across all rounds
+    security_issues:     list[dict]
+    all_security_issues: list[dict]
 
     # Deployment credentials — plaintext, RAM only, NEVER persisted to DB
-    # Set by deploy_confirm_task, cleared by deployer node after use
     deploy_payload: Optional[dict]
 
     # Collected per-run, saved to DB by worker, then cleared
@@ -203,6 +204,45 @@ class GraphState(TypedDict):
     repo_url:   Optional[str]
     deploy_url: Optional[str]
     error:      Optional[str]
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SSE EVENT HELPERS
+# Publish events in EXACTLY the shape the frontend Zustand store expects.
+# See: client/types/workflow.ts SSEEvent type
+# ═══════════════════════════════════════════════════════════════════
+
+def _publish_stage_change(project_id: str, stage: WorkflowStage):
+    """Frontend: { type: "stage_change", stage: WorkflowStage }"""
+    publish(project_id, {"type": "stage_change", "stage": stage.value})
+
+def _publish_agent_start(project_id: str, role: str):
+    """Frontend: { type: "agent_start", role: string }"""
+    publish(project_id, {"type": "agent_start", "role": role})
+
+def _publish_agent_done(project_id: str, role: str):
+    """Frontend: { type: "agent_done", role: string }"""
+    publish(project_id, {"type": "agent_done", "role": role})
+
+def _publish_artifact(project_id: str, artifact_type: str, title: str, content):
+    """
+    Frontend expects: { type: "artifact", artifact_type: string, title: string, content: unknown }
+    NOT the old shape with artifact_id/artifact_data nesting.
+    """
+    publish(project_id, {
+        "type":          "artifact",
+        "artifact_type": artifact_type,
+        "title":         title,
+        "content":       content,
+    })
+
+def _publish_error(project_id: str, message: str):
+    """Frontend: { type: "error", message: string }"""
+    publish(project_id, {"type": "error", "message": message})
+
+def _publish_done(project_id: str):
+    """Frontend: { type: "done" }"""
+    publish(project_id, {"type": "done"})
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -220,6 +260,10 @@ def _stream_conductor(
     Stream tokens from LLM.  Returns (blocks, artifacts).
     blocks   — [{type: "text", content: "..."}, {type: "artifact", artifact_id: "temp-uuid"}]
     artifacts — [{temp_id, artifact_type, title, content}]
+
+    Publishes SSE events in the exact shape the frontend expects:
+      text_chunk  → { type: "text_chunk", chunk: str, role: "conductor" }
+      artifact    → { type: "artifact", artifact_type: str, title: str, content: unknown }
     """
     parser       = StreamParser()
     blocks:      list[dict] = []
@@ -247,12 +291,13 @@ def _stream_conductor(
                     temp_id = str(uuid.uuid4())
                     artifacts.append({"temp_id": temp_id, **event.artifact})
                     blocks.append({"type": "artifact", "artifact_id": temp_id})
-                    publish(project_id, {
-                        "type":          "artifact",
-                        "artifact_id":   temp_id,
-                        "artifact_data": event.artifact,
-                        "role":          "conductor",
-                    })
+                    # Publish in frontend-expected shape (flat, no nesting)
+                    _publish_artifact(
+                        project_id,
+                        artifact_type=event.artifact.get("artifact_type", "unknown"),
+                        title=event.artifact.get("title", "Artifact"),
+                        content=event.artifact.get("content", {}),
+                    )
 
     for event in parser.flush():
         if event.kind == "text":
@@ -272,62 +317,262 @@ def _stream_conductor(
 
 
 def conductor_node(state: GraphState) -> Command:
+    """
+    STATE-DRIVEN conductor — routes on MessageType enum, never parses text.
+
+    MessageType values (set by message_routes.py → build_task.py → GraphState):
+      REQUEST_PLAN  → User clicked Plan button → generate plan via LLM
+      DIRECT_BUILD  → User clicked Build Now → generate plan + auto-approve
+      APPROVAL      → User clicked Approve on plan card
+      EDIT_PLAN     → User saved edits on plan card → update current_plan
+      CHAT          → Regular conversation message
+
+    WorkflowStage transitions published via SSE:
+      stage_change  → { type: "stage_change", stage: WorkflowStage }
+      text_chunk    → { type: "text_chunk", chunk: str, role: str }
+      artifact      → { type: "artifact", artifact_type: str, title: str, content: unknown }
+      agent_start   → { type: "agent_start", role: str }
+      agent_done    → { type: "agent_done", role: str }
+      done          → { type: "done" }
+    """
     project_id   = state["project_id"]
     chat_history = state["chat_history"]
     current_plan = state.get("current_plan")
 
     # ── Get user input ────────────────────────────────────────────
-    # On first run: current_user_input is set in initial_state by start_workflow_task
-    # On subsequent runs: current_user_input is set by Command(resume=...) from resume_workflow_task
-    # The interrupt_before=["conductor"] means the graph pauses BEFORE this node.
-    # When resumed, the resume value is injected via interrupt().
     user_input = state.get("current_user_input")
     if not user_input:
-        # This happens on resume — get the value from interrupt
         user_input = interrupt("waiting_for_user")
-    
+
     user_message = user_input.get("message", "") if isinstance(user_input, dict) else str(user_input)
-    message_type = user_input.get("message_type", "chat") if isinstance(user_input, dict) else "chat"
+    message_type = user_input.get("message_type", MessageType.CHAT) if isinstance(user_input, dict) else MessageType.CHAT
 
-    publish(project_id, {"type": "agent_start", "role": "conductor"})
+    _publish_agent_start(project_id, "conductor")
 
-    # ── APPROVAL — structured signal from Approve button, no text scanning ──
-    if message_type == "approval":
+    # ╔═══════════════════════════════════════════════════════════════╗
+    # ║  ACTION: approve_plan                                        ║
+    # ║  User clicked "Approve" on the plan card                     ║
+    # ╚═══════════════════════════════════════════════════════════════╝
+    if message_type == MessageType.APPROVAL:
         if not current_plan:
             publish(project_id, {
-                "type":  "text_chunk",
+                "type": "text_chunk",
                 "chunk": "⚠️ No plan to approve yet. Tell me what to build!\n",
-                "role":  "conductor",
+                "role": "conductor",
             })
-            publish(project_id, {"type": "done", "waiting_for": "user_input"})
-            # Loop back — clear current_user_input so next iteration waits for interrupt
+            _publish_agent_done(project_id, "conductor")
+            _publish_done(project_id)
             return Command(goto="conductor", update={
                 **state,
                 "current_user_input": None,
             })
 
         publish(project_id, {
-            "type":  "text_chunk",
+            "type": "text_chunk",
             "chunk": "✅ Plan approved! Starting the build...\n",
-            "role":  "conductor",
+            "role": "conductor",
         })
-        new_state = {
+        _publish_agent_done(project_id, "conductor")
+        # Transition: plan_review → building (frontend shows building UI)
+        _publish_stage_change(project_id, WorkflowStage.BUILDING)
+
+        return Command(goto="artificer", update={
             **state,
-            "approved_plan":    current_plan,
-            "current_user_input": None,  # Clear so it's not reused
-            "messages_to_save": list(state["messages_to_save"]) + [{
+            "approved_plan":      current_plan,
+            "current_user_input": None,
+            "messages_to_save":   list(state["messages_to_save"]) + [{
                 "role":         "conductor",
                 "message_type": "conductor_text",
                 "content":      [{"type": "text", "content": "✅ Plan approved! Starting the build..."}],
             }],
+        })
+
+    # ╔═══════════════════════════════════════════════════════════════╗
+    # ║  ACTION: edit_plan                                           ║
+    # ║  User saved edits on the plan card                           ║
+    # ╚═══════════════════════════════════════════════════════════════╝
+    if message_type == MessageType.EDIT_PLAN:
+        edited_plan = user_input.get("edited_plan")
+        if not edited_plan:
+            publish(project_id, {
+                "type": "text_chunk",
+                "chunk": "⚠️ No edited plan received.\n",
+                "role": "conductor",
+            })
+            _publish_agent_done(project_id, "conductor")
+            _publish_done(project_id)
+            return Command(goto="conductor", update={
+                **state,
+                "current_user_input": None,
+            })
+
+        publish(project_id, {
+            "type": "text_chunk",
+            "chunk": "📝 Plan updated! Review the changes and approve when ready.\n",
+            "role": "conductor",
+        })
+        # Re-publish the updated plan artifact so frontend Zustand store picks it up
+        _publish_artifact(project_id, "plan", "Updated Plan", edited_plan)
+        _publish_agent_done(project_id, "conductor")
+        # Stay in plan_review stage
+        _publish_stage_change(project_id, WorkflowStage.PLAN_REVIEW)
+        _publish_done(project_id)
+
+        return Command(goto="conductor", update={
+            **state,
+            "current_plan":       edited_plan,
+            "current_user_input": None,
+            "chat_history": (chat_history + [
+                {"role": "user",      "content": "I edited the plan."},
+                {"role": "assistant", "content": "Plan updated. Review and approve when ready."},
+            ])[-40:],
+            "messages_to_save": list(state["messages_to_save"]) + [{
+                "role":         "conductor",
+                "message_type": "conductor_text",
+                "content":      [{"type": "text", "content": "📝 Plan updated! Review the changes and approve when ready."}],
+            }],
+        })
+
+    # ╔═══════════════════════════════════════════════════════════════╗
+    # ║  ACTION: direct_build                                        ║
+    # ║  User clicked "Build Now" — generate plan + auto-approve     ║
+    # ╚═══════════════════════════════════════════════════════════════╝
+    if message_type == MessageType.DIRECT_BUILD:
+        # Stage: planning (while LLM generates the plan)
+        _publish_stage_change(project_id, WorkflowStage.PLANNING)
+
+        # Stream the plan from LLM — same as request_plan
+        blocks, artifacts, new_history = _conductor_generate_plan(
+            state, project_id, chat_history, user_message
+        )
+
+        plan_artifact = next((a for a in artifacts if a.get("artifact_type") == "plan"), None)
+        if not plan_artifact:
+            publish(project_id, {
+                "type": "text_chunk",
+                "chunk": "⚠️ Failed to generate a plan. Please try again.\n",
+                "role": "conductor",
+            })
+            _publish_agent_done(project_id, "conductor")
+            _publish_stage_change(project_id, WorkflowStage.IDLE)
+            _publish_done(project_id)
+            return Command(goto="conductor", update={
+                **state,
+                "current_user_input": None,
+                "chat_history": new_history,
+            })
+
+        # Auto-approve — skip plan_review, go straight to building
+        plan_content = plan_artifact.get("content", {})
+        publish(project_id, {
+            "type": "text_chunk",
+            "chunk": "\n✅ Plan auto-approved. Starting the build...\n",
+            "role": "conductor",
+        })
+        _publish_agent_done(project_id, "conductor")
+        _publish_stage_change(project_id, WorkflowStage.BUILDING)
+
+        return Command(goto="artificer", update={
+            **state,
+            "current_plan":       plan_content,
+            "approved_plan":      plan_content,
+            "current_user_input": None,
+            "chat_history":       new_history,
+            "artifacts":          list(state["artifacts"]) + artifacts,
+            "messages_to_save":   list(state["messages_to_save"]) + [{
+                "role":         "conductor",
+                "message_type": "conductor_plan",
+                "content":      blocks,
+            }],
+        })
+
+    # ╔═══════════════════════════════════════════════════════════════╗
+    # ║  ACTION: request_plan                                        ║
+    # ║  User clicked "Plan" button — generate plan, wait for review ║
+    # ╚═══════════════════════════════════════════════════════════════╝
+    if message_type == MessageType.REQUEST_PLAN:
+        _publish_stage_change(project_id, WorkflowStage.PLANNING)
+
+        blocks, artifacts, new_history = _conductor_generate_plan(
+            state, project_id, chat_history, user_message
+        )
+
+        plan_artifact = next((a for a in artifacts if a.get("artifact_type") == "plan"), None)
+        new_state = {
+            **state,
+            "chat_history":       new_history,
+            "artifacts":          list(state["artifacts"]) + artifacts,
+            "current_user_input": None,
+            "messages_to_save":   list(state["messages_to_save"]) + [{
+                "role":         "conductor",
+                "message_type": "conductor_plan" if plan_artifact else "conductor_text",
+                "content":      blocks,
+            }],
         }
-        # NOTE: Do NOT publish "done" here — the build pipeline (artificer → guardian → deployer)
-        # will continue running in the same wf.stream() call. The deployer node publishes "done"
-        # when it interrupts for env vars. Publishing "done" here would close the SSE prematurely.
-        return Command(goto="artificer", update=new_state)
+
+        if plan_artifact:
+            new_state["current_plan"] = plan_artifact.get("content", {})
+            # Frontend Zustand store also sets plan_review on artifact type "plan"
+            # but we publish it explicitly for clarity
+            _publish_agent_done(project_id, "conductor")
+            _publish_stage_change(project_id, WorkflowStage.PLAN_REVIEW)
+        else:
+            _publish_agent_done(project_id, "conductor")
+
+        _publish_done(project_id)
+        return Command(goto="conductor", update=new_state)
+
+    # ╔═══════════════════════════════════════════════════════════════╗
+    # ║  ACTION: chat (send_message)                                 ║
+    # ║  Regular conversation — LLM decides if it produces a plan    ║
+    # ╚═══════════════════════════════════════════════════════════════╝
+    # Default: message_type == "chat" or anything else
+    # If there's already a plan, stay in planning context
+    if current_plan:
+        _publish_stage_change(project_id, WorkflowStage.PLANNING)
+
+    blocks, artifacts, new_history = _conductor_generate_plan(
+        state, project_id, chat_history, user_message
+    )
+
+    plan_artifact = next((a for a in artifacts if a.get("artifact_type") == "plan"), None)
+    new_state = {
+        **state,
+        "chat_history":       new_history,
+        "artifacts":          list(state["artifacts"]) + artifacts,
+        "current_user_input": None,
+        "messages_to_save":   list(state["messages_to_save"]) + [{
+            "role":         "conductor",
+            "message_type": "conductor_plan" if plan_artifact else "conductor_text",
+            "content":      blocks,
+        }],
+    }
+
+    if plan_artifact:
+        new_state["current_plan"] = plan_artifact.get("content", {})
+        _publish_agent_done(project_id, "conductor")
+        _publish_stage_change(project_id, WorkflowStage.PLAN_REVIEW)
+    else:
+        _publish_agent_done(project_id, "conductor")
+
+    _publish_done(project_id)
+    return Command(goto="conductor", update=new_state)
 
 
-    # ── Normal conductor response (streaming) ─────────────────────
+# ── Conductor helper: generate plan via LLM streaming ─────────────
+
+def _conductor_generate_plan(
+    state: GraphState,
+    project_id: str,
+    chat_history: list[dict],
+    user_message: str,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """
+    Stream LLM response with plan generation prompt.
+    Returns (blocks, artifacts, new_history).
+    """
+    current_plan = state.get("current_plan")
+
     SYSTEM = f"""You are a Conductor agent — the user's AI software architect and assistant.
 
 PROJECT: {state["project_name"]}
@@ -353,33 +598,19 @@ PLAN ARTIFACT — use EXACTLY this JSON inside the markers when creating/updatin
       "database": "postgresql"
     }},
     "architecture": {{
-      "diagram": "flowchart TD; A[User] --> B[Conductor]; B --> C[Artificer]; C --> D[Guardian]; D --> E[Deployer];",
-      "content": "Description of the system architecture and component relationships"
+      "diagram": "flowchart TD; ...",
+      "content": "Description of the system architecture"
     }},
     "database_schemas": {{
-      "users": {{
-        "id": "UUID",
-        "email": "VARCHAR",
-        "username": "VARCHAR",
-        "onboardingCompleted": "BOOLEAN"
-      }},
-      "projects": {{
-        "id": "UUID",
-        "name": "VARCHAR",
-        "description": "TEXT",
-        "ownerId": "UUID"
+      "table_name": {{
+        "column": "TYPE"
       }}
     }},
     "endpoints": [
       {{
-        "path": "/api/users",
+        "path": "/api/example",
         "method": "GET",
-        "description": "Fetch all users"
-      }},
-      {{
-        "path": "/api/projects",
-        "method": "GET",
-        "description": "Fetch all projects"
+        "description": "What it does"
       }}
     ]
   }}
@@ -387,7 +618,7 @@ PLAN ARTIFACT — use EXACTLY this JSON inside the markers when creating/updatin
 {ARTIFACT_END}
 
 After showing a plan ALWAYS end with:
-"Review the plan above. Request any changes or say **APPROVE** to start the build."
+"Review the plan above. Request any changes or click **Approve** to start the build."
 """
 
     ai_messages       = chat_history + [{"role": "user", "content": user_message}]
@@ -395,30 +626,11 @@ After showing a plan ALWAYS end with:
 
     text_content = " ".join(b["content"] for b in blocks if b["type"] == "text")
     new_history  = (chat_history + [
-        {"role": "user", "content": user_message},
+        {"role": "user",      "content": user_message},
         {"role": "assistant", "content": text_content},
     ])[-40:]
 
-    new_state = {
-        **state,
-        "chat_history": new_history,
-        "artifacts":    list(state["artifacts"]) + artifacts,
-        "messages_to_save": list(state["messages_to_save"]) + [{
-            "role": "conductor",
-            "message_type": "conductor_plan" if any(a.get("artifact_type") == "plan" for a in artifacts) else "conductor_text",
-            "content": blocks,
-        }],
-    }
-
-    plan_artifact = next((a for a in artifacts if a.get("artifact_type") == "plan"), None)
-    if plan_artifact:
-        new_state["current_plan"] = plan_artifact.get("content", {})
-
-    publish(project_id, {"type": "done", "waiting_for": "user_input"})
-    
-    # Clear current_user_input so next conductor iteration waits for interrupt
-    new_state["current_user_input"] = None
-    return Command(goto="conductor", update=new_state)
+    return blocks, artifacts, new_history
 
 # ═══════════════════════════════════════════════════════════════════
 # NODE 2 — ARTIFICER (write mode + fix mode)
@@ -433,18 +645,14 @@ def artificer_node(state: GraphState) -> GraphState:
 
     # ── VALIDATION: Ensure approved_plan has correct structure ────
     if approved_plan and "artifact_type" in approved_plan:
-        # CRITICAL: approved_plan should be the content dict, not the full artifact
-        # If we see "artifact_type", something went wrong in conductor_node
         raise ValueError(
             f"approved_plan has incorrect structure — contains 'artifact_type' key. "
             f"Expected content dict only. Keys: {list(approved_plan.keys())}"
         )
 
-    publish(project_id, {
-        "type":  "agent_start",
-        "role":  "artificer",
-        "extra": "fix mode" if is_fix_mode else "write mode",
-    })
+    _publish_agent_start(project_id, "artificer")
+    if is_fix_mode:
+        _publish_stage_change(project_id, WorkflowStage.FIXING)
 
     # ── Get tech stack info from approved_plan ─────────────────────
     tech_stack = approved_plan.get("tech_stack", {})
@@ -603,7 +811,7 @@ DO NOT start the app — the build system handles that after you finish.
         "role":  "system",
     })
 
-    # ── Save message ──────────────────────────────────────────────
+    # Save message
     state["messages_to_save"] = list(state["messages_to_save"]) + [{
         "role":         "artificer",
         "message_type": "conductor_text",
@@ -612,6 +820,10 @@ DO NOT start the app — the build system handles that after you finish.
 
     # Clear current round security_issues — Guardian will populate fresh ones
     state["security_issues"] = []
+
+    _publish_agent_done(project_id, "artificer")
+    # Transition to testing stage (Guardian is next via graph edge)
+    _publish_stage_change(project_id, WorkflowStage.TESTING)
 
     return state
 
@@ -627,11 +839,7 @@ def guardian_node(state: GraphState) -> GraphState:
     app_url    = state.get("app_url", "")
     iteration  = state["security_iteration"] + 1
 
-    publish(project_id, {
-        "type":  "agent_start",
-        "role":  "guardian",
-        "extra": f"scan #{iteration}",
-    })
+    _publish_agent_start(project_id, "guardian")
     publish(project_id, {
         "type":  "text_chunk",
         "chunk": f"\n🛡️ Guardian Security Scan #{iteration}\n",
@@ -779,12 +987,16 @@ Be exhaustive — this app will handle real users and real data.
             "chunk": f"\n✅ Scan #{iteration} complete — no vulnerabilities found! Preparing deployment.\n",
             "role":  "guardian",
         })
+        _publish_agent_done(project_id, "guardian")
+        _publish_stage_change(project_id, WorkflowStage.DEPLOYING)
     else:
         publish(project_id, {
             "type":  "text_chunk",
             "chunk": f"\n⚠️ Scan #{iteration}: found {len(issues)} issue(s). Sending to Artificer for fixes...\n",
             "role":  "guardian",
         })
+        _publish_agent_done(project_id, "guardian")
+        _publish_stage_change(project_id, WorkflowStage.FIXING)
 
     return state
 
@@ -808,11 +1020,7 @@ def deployer_node(state: GraphState) -> GraphState:
             f"Expected content dict only. Keys: {list(approved_plan.keys())}"
         )
 
-    publish(project_id, {
-        "type":  "agent_start",
-        "role":  "deployer",
-        "extra": "analyzing codebase for deployment",
-    })
+    _publish_agent_start(project_id, "deployer")
 
     # ── Check if this is the initial deployment analysis or post-env-vars ──
     if not deploy_payload:
@@ -912,49 +1120,41 @@ Ready for environment variable collection.
 
         # Create env var request artifact
         temp_id = str(uuid.uuid4())
+        env_var_content = {
+            "build_id":        build_id,
+            "status":          "waiting_for_env_vars",
+            "env_vars_needed": env_vars_needed,
+            "analysis":        final_text,
+            "message":         (
+                "✅ Security testing complete! Codebase analyzed for deployment.\n\n"
+                f"Found {len(env_vars_needed)} environment variables needed.\n"
+                "Please provide your environment variables to proceed with deployment.\n\n"
+                "Your values are encrypted in the browser — we never see the plaintext."
+            ),
+        }
         state["artifacts"] = list(state["artifacts"]) + [{
             "temp_id":       temp_id,
             "artifact_type": "env_var_request",
             "title":         "Environment Variables Required for Deployment",
-            "content": {
-                "build_id":        build_id,
-                "status":          "waiting_for_env_vars",
-                "env_vars_needed": env_vars_needed,
-                "analysis":        final_text,
-                "message":         (
-                    "✅ Security testing complete! Codebase analyzed for deployment.\n\n"
-                    f"Found {len(env_vars_needed)} environment variables needed.\n"
-                    "Please provide your environment variables to proceed with deployment.\n\n"
-                    "Your values are encrypted in the browser — we never see the plaintext."
-                ),
-            },
+            "content":       env_var_content,
         }]
-        
+
         state["messages_to_save"] = list(state["messages_to_save"]) + [{
             "role":         "deployer",
-            "message_type": "system_event", 
+            "message_type": "system_event",
             "content": [
                 {"type": "text",     "content": final_text},
                 {"type": "artifact", "artifact_id": temp_id},
             ],
         }]
-        
-        publish(project_id, {
-            "type":          "artifact",
-            "artifact_id":   temp_id,
-            "artifact_data": {
-                "artifact_type": "env_var_request",
-                "title":         "Environment Variables Required for Deployment",
-                "content":       {
-                    "env_vars_needed": env_vars_needed, 
-                    "build_id": build_id,
-                    "analysis": final_text
-                },
-            },
-            "role": "deployer",
-        })
-        
-        publish(project_id, {"type": "done", "waiting_for": "env_vars"})
+
+        # Publish in frontend-expected shape (flat)
+        _publish_artifact(project_id, "env_var_request",
+                          "Environment Variables Required for Deployment",
+                          env_var_content)
+        _publish_agent_done(project_id, "deployer")
+        _publish_stage_change(project_id, WorkflowStage.WAITING_ENV)
+        _publish_done(project_id)
 
         # ── INTERRUPT — pause, save state, wait for deploy_confirm_task ──
         deploy_payload = interrupt("waiting_for_env_vars")
@@ -976,35 +1176,27 @@ Ready for environment variable collection.
             "role":  "deployer",
         })
         
+        railway_content = {
+            "build_id": build_id,
+            "status":   "waiting_for_railway_key",
+            "message":  (
+                "🚂 Almost there! Your app is built and security-tested.\n\n"
+                "To deploy, connect your Railway account once.\n"
+                "Future deployments are fully automatic — you'll never be asked again.\n\n"
+                "Get your token: railway.app → Account Settings → Tokens"
+            ),
+        }
         temp_id = str(uuid.uuid4())
         state["artifacts"] = list(state["artifacts"]) + [{
             "temp_id":       temp_id,
             "artifact_type": "connect_railway",
             "title":         "Connect Railway to Deploy",
-            "content": {
-                "build_id": build_id,
-                "status":   "waiting_for_railway_key",
-                "message":  (
-                    "🚂 Almost there! Your app is built and security-tested.\n\n"
-                    "To deploy, connect your Railway account once.\n"
-                    "Future deployments are fully automatic — you'll never be asked again.\n\n"
-                    "Get your token: railway.app → Account Settings → Tokens"
-                ),
-            },
+            "content":       railway_content,
         }]
-        
-        publish(project_id, {
-            "type":          "artifact",
-            "artifact_id":   temp_id, 
-            "artifact_data": {
-                "artifact_type": "connect_railway",
-                "title":         "Connect Railway to Deploy",
-                "content": {"build_id": build_id, "status": "waiting_for_railway_key"},
-            },
-            "role": "system",
-        })
-        
-        publish(project_id, {"type": "done", "waiting_for": "railway_key"})
+
+        _publish_artifact(project_id, "connect_railway",
+                          "Connect Railway to Deploy", railway_content)
+        _publish_done(project_id)
         
         # Wait for Railway connection
         deploy_payload = interrupt("waiting_for_railway_key")
@@ -1024,6 +1216,9 @@ Ready for environment variable collection.
             "chunk": "❌ GitHub token not provided. Cannot deploy.\n",
             "role":  "deployer",
         })
+        _publish_agent_done(project_id, "deployer")
+        _publish_stage_change(project_id, WorkflowStage.ERROR)
+        _publish_error(project_id, "GitHub token missing")
         return state
         
     if not railway_api_key:
@@ -1033,6 +1228,9 @@ Ready for environment variable collection.
             "chunk": "❌ Railway API key not provided. Cannot deploy.\n",
             "role":  "deployer",
         })
+        _publish_agent_done(project_id, "deployer")
+        _publish_stage_change(project_id, WorkflowStage.ERROR)
+        _publish_error(project_id, "Railway API key missing")
         return state
 
     # Reattach Docker for deployment
@@ -1130,59 +1328,50 @@ IMPORTANT:
 
     # ── Deployment artifact ───────────────────────────────────────
     temp_id = str(uuid.uuid4())
+    deploy_title = "Deployment Complete" if deploy_url else "Deployment Attempted"
+    deploy_content = json.dumps({
+        "provider":            "railway",
+        "url":                 deploy_url,
+        "repo_url":            repo_url,
+        "status":              "live" if deploy_url else "unknown",
+        "security_iterations": state["security_iteration"],
+        "total_issues_fixed":  len(state.get("all_security_issues", [])),
+        "project_slug":        project_slug,
+        "env_vars_count":      len(plaintext_vars),
+    })
+
     state["artifacts"] = list(state["artifacts"]) + [{
         "temp_id":       temp_id,
         "artifact_type": "deployment",
-        "title":         "Deployment Complete" if deploy_url else "Deployment Attempted",
-        "content": {
-            "provider":            "railway",
-            "url":                 deploy_url,
-            "repo_url":            repo_url,
-            "status":              "live"    if deploy_url else "unknown",
-            "security_iterations": state["security_iteration"],
-            "total_issues_fixed":  len(state.get("all_security_issues", [])),
-            "project_slug":        project_slug,
-            "env_vars_count":      len(plaintext_vars),
-        },
+        "title":         deploy_title,
+        "content":       deploy_content,
     }]
-    
-    final_msg = f"🎉 Successfully deployed to {deploy_url}!" if deploy_url else "⚠️ Deployment attempted — check logs for status."
+
+    final_msg = (
+        f"🎉 Successfully deployed to {deploy_url}!"
+        if deploy_url
+        else "⚠️ Deployment attempted — check logs for status."
+    )
     state["messages_to_save"] = list(state["messages_to_save"]) + [{
         "role":         "deployer",
         "message_type": "system_event",
         "content": [
-            {"type": "text",     "content": final_text},
+            {"type": "text",     "content": final_msg},
             {"type": "artifact", "artifact_id": temp_id},
         ],
         "metadata": {
-            "event":      "deployment_complete",
-            "url":        deploy_url,
-            "repo_url":   repo_url,
-            "build_id":   build_id,
+            "event":    "deployment_complete",
+            "url":      deploy_url,
+            "repo_url": repo_url,
         },
     }]
 
-    publish(project_id, {
-        "type":          "artifact",
-        "artifact_id":   temp_id,
-        "artifact_data": {
-            "artifact_type": "deployment",
-            "title":         "Deployment Complete" if deploy_url else "Deployment Attempted",
-            "content": {
-                "provider": "railway",
-                "url": deploy_url,
-                "repo_url": repo_url,
-                "status": "live" if deploy_url else "unknown",
-            },
-        },
-        "role": "deployer",
-    })
-    
-    publish(project_id, {
-        "type":       "done",
-        "deploy_url": deploy_url,
-        "repo_url":   repo_url,
-    })
+    # ── SSE: deployment artifact → agent_done → complete → done ──
+    _publish_artifact(project_id, "deployment", deploy_title, deploy_content)
+    _publish_agent_done(project_id, "deployer")
+    _publish_stage_change(project_id, WorkflowStage.COMPLETE)
+    _publish_done(project_id)
+
     return state
 
 

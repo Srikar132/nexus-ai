@@ -14,7 +14,18 @@ const ProjectPage = async ({
     const resolvedParams = await params;
     id = resolvedParams.id;
 
-    // const project = await projectServices.getProject(id);
+    const project = await projectServices.getProject(id);
+
+
+
+
+    return (
+      <main className="w-screen h-screen p-8 overflow-hidden">
+        <div className={"flex flex-col w-full h-full border border-red-500"}>
+
+        </div>
+      </main>
+    );
   } catch (error) {
     console.error("Error fetching project:", error);
     hasError = true;
@@ -28,16 +39,6 @@ const ProjectPage = async ({
       </main>
     );
   }
-
-  return (
-    <main>
-      <h1>Project Details</h1>
-      <p>Information about the project will be displayed here.</p>
-      <p className="text-sm text-muted-foreground mt-2">
-        Project ID: {id}
-      </p>
-    </main>
-  );
 };
 
 export default ProjectPage;

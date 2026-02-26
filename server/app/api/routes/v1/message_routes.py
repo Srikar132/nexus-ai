@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 import logging
 from app.schemas.message_schemas import SendMessageRequest, MessageListResponse
 from app.schemas.project_schemas import DeployConfirmRequest, SendMessageResponse
+from app.schemas.enums import UserAction, ACTION_TO_MESSAGE_TYPE
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -109,49 +110,95 @@ async def send_message(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # ── Map frontend action → backend message_type ────────────────
+    # Uses the enum-based mapping from schemas/enums.py.
+    # The conductor node reads message_type — never parses text.
+    message_type = ACTION_TO_MESSAGE_TYPE.get(body.action)
+    if not message_type:
+        raise HTTPException(status_code=422, detail=f"Unknown action: {body.action}")
+
+    # ── provide_env_vars is handled by deploy-confirm, not normal message flow
+    if body.action == UserAction.PROVIDE_ENV_VARS:
+        if not body.vars:
+            raise HTTPException(status_code=422, detail="vars required for provide_env_vars action")
+        # Delegate to deploy_confirm_task
+        active_build = await BuildRepo(db).get_active_build(project_id)
+        if not active_build:
+            raise HTTPException(status_code=409, detail="No active build waiting for deployment.")
+        if not project.langgraph_thread_id:
+            raise HTTPException(status_code=500, detail="No LangGraph thread ID.")
+
+        deploy_confirm_task.delay(
+            project_id     = str(project_id),
+            thread_id      = project.langgraph_thread_id,
+            user_id        = str(current_user.id),
+            plaintext_vars = body.vars,
+        )
+        # Save a user message recording the action (not the vars!)
+        user_msg = await MessageRepo(db).create(
+            project_id   = project_id,
+            role         = "user",
+            message_type = "user_prompt",
+            content      = [{"type": "text", "content": "Submitted environment variables for deployment."}]
+        )
+        await db.commit()
+        return {
+            "user_message_id": str(user_msg.id),
+            "thread_id":       project.langgraph_thread_id,
+            "status":          "deploying",
+            "stream_url":      f"/projects/{project_id}/messages/stream",
+        }
+
     # ── Save user message to DB first ─────────────────────────────
+    display_content = body.content or ""
+    if body.action == UserAction.APPROVE_PLAN:
+        display_content = "✅ Approved the plan."
+    elif body.action == UserAction.EDIT_PLAN:
+        display_content = body.content or "Edited the plan."
+
     user_msg = await MessageRepo(db).create(
         project_id   = project_id,
         role         = "user",
         message_type = "user_prompt",
-        content      = [{"type": "text", "content": body.content}]
+        content      = [{"type": "text", "content": display_content}]
     )
 
     thread_id = project.langgraph_thread_id
 
     # ── First message ever? Start new workflow. Else resume. ──────
-    # Check if this project has any previous messages (excluding the one we just saved)
     total_messages = await MessageRepo(db).count_messages(project_id)
-    is_first_message = (total_messages <= 1)  # 1 because we just saved the user message
-    
+    is_first_message = (total_messages <= 1)
+
     if is_first_message:
-        # Generate thread_id if this is the very first message and project has no thread_id
         if not thread_id:
             import uuid
             thread_id = str(uuid.uuid4())
-            # Update the project with the new thread_id
             await ProjectRepo(db).update(project_id, current_user.id, langgraph_thread_id=thread_id)
-
     else:
-        # Resume existing LangGraph thread with new user message
-        # thread_id should exist at this point, but safety check
         if not thread_id:
             raise HTTPException(
-                status_code=500, 
+                status_code=500,
                 detail="Project has messages but no LangGraph thread ID. Data inconsistency."
             )
 
     # ── Commit all DB changes before dispatching Celery task ──────
-    # This ensures the user message + thread_id are persisted before
-    # the worker tries to read them from the DB
     await db.commit()
 
+    # ── Build the payload that the Celery task passes to LangGraph ─
+    # This becomes current_user_input in GraphState
+    celery_payload = {
+        "message":      body.content or "",
+        "message_type": message_type,
+    }
+    if body.action == "edit_plan" and body.edited_plan:
+        celery_payload["edited_plan"] = body.edited_plan
+
     if is_first_message:
-        # Start brand new LangGraph thread
         start_workflow_task.delay(
             project_id          = str(project_id),
             thread_id           = thread_id,
-            user_message        = body.content,
+            user_message        = body.content or "",
+            message_type        = message_type,
             project_name        = project.name,
             project_description = project.description or "",
         )
@@ -159,10 +206,11 @@ async def send_message(
         resume_workflow_task.delay(
             project_id   = str(project_id),
             thread_id    = thread_id,
-            user_message = body.content,
-            message_type = "chat",  # Default message type for regular chat
+            user_message = body.content or "",
+            message_type = message_type,
+            edited_plan  = body.edited_plan if body.action == "edit_plan" else None,
         )
-        
+
     return {
         "user_message_id": str(user_msg.id),
         "thread_id":       thread_id,
