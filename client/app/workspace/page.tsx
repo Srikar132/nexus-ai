@@ -3,8 +3,6 @@
 import { useState } from "react";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { WorkspaceHeader } from "@/components/workspace/workspace-header";
-import { TaskPanel } from "@/components/workspace/task-panel";
-import { PreviewSidebar } from "@/components/workspace/preview-sidebar";
 import { WorkspacePromptInput } from "@/components/workspace/workspace-prompt-input";
 import { Badge } from "@/components/ui/badge";
 import {

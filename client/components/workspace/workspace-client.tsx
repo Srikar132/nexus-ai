@@ -2,7 +2,6 @@
 
 import { Project } from "@/types/project";
 import { WorkspaceHeader } from "./workspace-header";
-import { init } from "next/dist/compiled/webpack/webpack";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable";
 import WorkspaceChat from "./workspace-chat";
 import { useWorkflow } from "@/hooks/use-workflow";
@@ -60,7 +59,7 @@ const WorkspaceClient = ({ initialProject }: WorkspaceClientProps) => {
                         />
                     </ResizablePanel>
                     <ResizableHandle/>
-                    <ResizablePanel accessKey="panel2">Two</ResizablePanel>
+                    <ResizablePanel accessKey="panel2"></ResizablePanel>
                 </ResizablePanelGroup>
             </div>
 

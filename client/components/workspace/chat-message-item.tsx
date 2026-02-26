@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import type { Message } from "@/types/workflow";
 import { UserMessage } from "./user-message";
 import { AssistantMessage } from "./assistant-message";

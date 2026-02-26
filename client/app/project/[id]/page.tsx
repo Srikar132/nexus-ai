@@ -56,10 +56,10 @@ const ProjectPage = async ({
         <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
             <WorkspaceClient
                 initialProject={project}
-                
             />
         </div>
     );
+    
   } catch (error) {
     console.error("Error fetching project:", error);
     hasError = true;
