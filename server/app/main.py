@@ -21,9 +21,14 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # Your Next.js URL
+    allow_origins=[
+        "http://localhost:3000",      # Next.js development server
+        "http://127.0.0.1:3000",     # Alternative localhost format
+        "http://localhost:8000",      # FastAPI server (for SSE)
+        "http://127.0.0.1:8000",     # Alternative FastAPI format
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

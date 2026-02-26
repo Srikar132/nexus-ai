@@ -31,8 +31,16 @@ export async function apiFetch<T = unknown>(
   const { method = "GET", body, params, headers: customHeaders } = options;
 
   try {
-    // Build URL
-    const baseURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    // Build URL - Use Next.js rewrite proxy by default for client-side requests
+    let baseURL: string;
+    if (typeof window !== "undefined") {
+      // Client-side: Use Next.js rewrite proxy (same-origin, no CORS issues)
+      baseURL = window.location.origin;  // http://localhost:3000
+    } else {
+      // Server-side: Direct to FastAPI  
+      baseURL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    }
+    
     const url = new URL(path, baseURL);
     
     // Add query params

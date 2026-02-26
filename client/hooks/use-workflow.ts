@@ -89,14 +89,23 @@ export function useWorkflow(projectId: string) {
       eventSourceRef.current = null;
     }
 
-    // Connect DIRECTLY to FastAPI (bypasses Next.js rewrite proxy buffering)
-    // CORS is configured on FastAPI: allow_origins=["http://localhost:3000"], allow_credentials=True
-    // withCredentials:true sends authjs.session-token cookie cross-origin
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const url = `${API_BASE}/api/v1/projects/${projectId}/messages/stream`;
-    console.log("[SSE] Connecting directly to FastAPI:", url);
+    // Use Next.js rewrite proxy by default for same-origin SSE (avoids CORS issues)
+    // Falls back to direct FastAPI connection if needed
+    const USE_PROXY = true; // Set to false if you experience SSE buffering issues
+    
+    let url: string;
+    if (USE_PROXY) {
+      // Same-origin via Next.js rewrite - no CORS issues, cookies sent automatically
+      url = `/api/v1/projects/${projectId}/messages/stream`;
+      console.log("[SSE] Connecting via Next.js proxy:", url);
+    } else {
+      // Direct to FastAPI - requires CORS configuration
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      url = `${API_BASE}/api/v1/projects/${projectId}/messages/stream`;
+      console.log("[SSE] Connecting directly to FastAPI:", url);
+    }
 
-    const eventSource = new EventSource(url, { withCredentials: true });
+    const eventSource = new EventSource(url, USE_PROXY ? {} : { withCredentials: true });
 
     eventSource.onopen = () => {
       console.log("[SSE] Connection opened");
