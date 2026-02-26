@@ -240,7 +240,7 @@ def _publish_error(project_id: str, message: str):
     """Frontend: { type: "error", message: string }"""
     publish(project_id, {"type": "error", "message": message})
 
-def _publish_done(project_id: str):
+def _publish_done(project_id: str) -> None:
     """Frontend: { type: "done" }"""
     publish(project_id, {"type": "done"})
 
