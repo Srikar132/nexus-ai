@@ -31,7 +31,7 @@ export default function GeneralSettingsPage() {
                             <Input
                                 id="fullName"
                                 className="flex-1"
-                                value={"Srikar"}
+                                defaultValue={"Srikar"}
                             />
                         </div>
                     </div>
@@ -42,7 +42,7 @@ export default function GeneralSettingsPage() {
                         </Label>
                         <Input
                             id="displayName"
-                            value={"Srikar"}
+                            defaultValue={"Srikar"}
                         />
                     </div>
                 </div>

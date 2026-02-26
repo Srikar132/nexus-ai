@@ -32,7 +32,7 @@ def run_react_agent(
     tools:       list[BaseTool],
     history:     list = None,  # optional prior messages for context
     max_iter:    int  = MAX_ITERATIONS,
-    model:       str  = "llama-3.1-70b",  # Allow model selection
+    model:       str  = "llama-3.3-70b",  # Best available Groq model for tool use
 ) -> tuple[str, list[dict]]:
     """
     Run a ReAct agent loop.
@@ -69,11 +69,27 @@ def run_react_agent(
     final_text = ""
 
     for iteration in range(max_iter):
+        # Publish thinking status before each LLM call
+        if iteration == 0:
+            publish(project_id, {
+                "type":   "thinking",
+                "status": f"Agent {role} is analyzing...",
+                "role":   role,
+            })
+        else:
+            publish(project_id, {
+                "type":   "thinking",
+                "status": f"Agent {role} is reasoning (step {iteration + 1})...",
+                "role":   role,
+            })
+
         # Get response with tools
         response = llm.chat_with_tools(messages, tools, max_tokens=8096, temperature=0)
         
         # Add AI response to message history
-        messages.append({"role": "assistant", "content": response.content})
+        # Use a placeholder if content is empty (avoids API rejection on next call)
+        assistant_content = response.content if response.content else "..."
+        messages.append({"role": "assistant", "content": assistant_content})
 
         # ── Agent chose to use a tool ─────────────────────────────
         if response.tool_calls:

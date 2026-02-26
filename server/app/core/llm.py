@@ -292,19 +292,42 @@ class GroqProvider(BaseLLMProvider):
                 yield StreamChunk(content="", done=True)
     
     def chat_completion_with_tools(self, messages: List[Dict], tools: List[Dict], **kwargs) -> LLMResponse:
+        import re as _re
         # Convert tools to Groq format (same as OpenAI)
         groq_tools = [{"type": "function", "function": tool} for tool in tools]
         
-        response = self.client.chat.completions.create(
-            model=self.config.model,
-            max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
-            temperature=kwargs.get("temperature", self.config.temperature),
-            messages=messages,
-            tools=groq_tools,
-        )
+        # Retry loop: Groq's llama-3.3-70b-versatile occasionally generates
+        # XML-format tool calls that its own validator rejects (tool_use_failed).
+        # Retrying with parallel_tool_calls=False fixes it in 1-2 tries.
+        last_exc = None
+        for attempt in range(3):
+            try:
+                create_kwargs = dict(
+                    model=self.config.model,
+                    max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
+                    temperature=kwargs.get("temperature", self.config.temperature),
+                    messages=messages,
+                    tools=groq_tools,
+                )
+                # After first failure, disable parallel tool calls to force one-at-a-time
+                if attempt > 0:
+                    create_kwargs["parallel_tool_calls"] = False
+                response = self.client.chat.completions.create(**create_kwargs)
+                break  # success
+            except Exception as exc:
+                last_exc = exc
+                # Only retry on Groq tool_use_failed (XML format issue)
+                err_str = str(exc)
+                if "tool_use_failed" in err_str or "Failed to call a function" in err_str:
+                    continue
+                raise  # re-raise non-retryable errors immediately
+        else:
+            raise last_exc  # all retries exhausted
         
         message = response.choices[0].message
         tool_calls = []
+        clean_content = message.content or ""
+        xml_fallback = False
         
         if message.tool_calls:
             for tc in message.tool_calls:
@@ -313,9 +336,32 @@ class GroqProvider(BaseLLMProvider):
                     "name": tc.function.name,
                     "args": json.loads(tc.function.arguments)
                 })
+        elif message.content:
+            # Fallback: parse XML-format tool calls that some models emit in the
+            # content field instead of structured tool_calls.
+            # Pattern: <function=tool_name {...json...}>  (with optional whitespace)
+            xml_tool_pattern = _re.compile(
+                r"<function=(\w+)\s*(\{.*?\})>", _re.DOTALL
+            )
+            for i, match in enumerate(_re.finditer(xml_tool_pattern, message.content)):
+                tool_name = match.group(1)
+                raw_args  = match.group(2)
+                try:
+                    args = json.loads(raw_args)
+                except json.JSONDecodeError:
+                    args = {"raw": raw_args}
+                tool_calls.append({
+                    "id":   f"xml_fallback_{i}",
+                    "name": tool_name,
+                    "args": args,
+                })
+            if tool_calls:
+                xml_fallback = True
+                # Strip the XML blobs from the content so they don't get echoed back
+                clean_content = _re.sub(xml_tool_pattern, "", message.content).strip()
         
         return LLMResponse(
-            content=message.content or "",
+            content=clean_content if xml_fallback else (message.content or ""),
             role="assistant",
             tool_calls=tool_calls
         )
@@ -371,9 +417,30 @@ class UnifiedLLM:
         # Groq models
         "llama-3.1-70b": LLMConfig(
             provider=LLMProvider.GROQ,
-            model="llama-3.1-70b-versatile",
+            model="llama-3.3-70b-versatile",  # 3.1-70b-versatile decommissioned → replaced with 3.3
             api_key=settings.GROQ_API_KEY,
             max_tokens=4096,
+            temperature=0.0
+        ),
+        "llama-3.3-70b": LLMConfig(
+            provider=LLMProvider.GROQ,
+            model="llama-3.3-70b-versatile",
+            api_key=settings.GROQ_API_KEY,
+            max_tokens=4096,
+            temperature=0.0
+        ),
+        "llama-3-groq-70b-tool-use": LLMConfig(
+            provider=LLMProvider.GROQ,
+            model="llama3-groq-70b-8192-tool-use-preview",
+            api_key=settings.GROQ_API_KEY,
+            max_tokens=8192,
+            temperature=0.0
+        ),
+        "llama-3-groq-8b-tool-use": LLMConfig(
+            provider=LLMProvider.GROQ,
+            model="llama3-groq-8b-8192-tool-use-preview",
+            api_key=settings.GROQ_API_KEY,
+            max_tokens=8192,
             temperature=0.0
         ),
         "llama-3.1-8b": LLMConfig(

@@ -4,10 +4,11 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import type { Plan } from "@/types/workflow";
 
-// Define all possible right sidebar states (simplified to only idle and plan for now)
+// Define all possible right sidebar states
 export type RightSidebarState = 
   | "idle"           // Empty state
-  | "plan";          // Plan details
+  | "plan"           // Plan details
+  | "code";          // Code panel (file tree + code viewer)
 
 // Define payload interfaces for each state
 export type PlanPayload = Plan
@@ -24,8 +25,9 @@ export interface RightSidebarStore {
   payload: RightSidebarPayload;
   isVisible: boolean;
   
-  // Actions (simplified to only plan and idle)
+  // Actions
   showPlan: (plan: PlanPayload) => void;
+  showCode: () => void;
   setIdle: () => void;
   hide: () => void;
   toggle: () => void;
@@ -45,7 +47,7 @@ export const useRightSidebar = create<RightSidebarStore>()(
       payload: null,
       isVisible: false,
 
-      // Actions (simplified to only plan and idle)
+      // Actions
       showPlan: (plan) =>
         set(
           { 
@@ -55,6 +57,17 @@ export const useRightSidebar = create<RightSidebarStore>()(
           },
           false,
           "showPlan"
+        ),
+
+      showCode: () =>
+        set(
+          {
+            currentState: "code",
+            payload: null,
+            isVisible: true,
+          },
+          false,
+          "showCode"
         ),
 
       setIdle: () =>
@@ -115,10 +128,11 @@ export const useRightSidebarPayload = <T extends RightSidebarPayload>() =>
   useRightSidebar((state) => state.payload as T | null);
 export const useRightSidebarVisible = () => useRightSidebar((state) => state.isVisible);
 
-// Action hooks (simplified)
+// Action hooks
 export const useRightSidebarActions = () => {
   const {
     showPlan,
+    showCode,
     setIdle,
     hide,
     toggle,
@@ -127,6 +141,7 @@ export const useRightSidebarActions = () => {
 
   return {
     showPlan,
+    showCode,
     setIdle,
     hide,
     toggle,

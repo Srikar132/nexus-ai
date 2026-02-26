@@ -21,12 +21,15 @@ export type WorkflowStage =
  */
 export type SSEEvent =
   | { type: "stage_change"; stage: WorkflowStage }
+  | { type: "thinking"; status: string; role?: string }
   | { type: "text_chunk"; chunk: string; role: string }
   | { type: "artifact"; artifact_type: string; title: string; content: unknown }
   | { type: "tool_call"; role: string; tool: string; input: string }
   | { type: "tool_result"; role: string; tool: string; result: string }
   | { type: "agent_start"; role: string }
   | { type: "agent_done"; role: string }
+  | { type: "file_created"; path: string; content: string; lines: number; size: number }
+  | { type: "file_deleted"; path: string }
   | { type: "error"; message: string }
   | { type: "done" };
 

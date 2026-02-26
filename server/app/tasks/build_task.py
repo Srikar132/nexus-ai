@@ -237,8 +237,22 @@ def start_workflow_task(
 
     db = _db()
     try:
+        # ── Publish thinking indicator immediately — fills the UI gap ──
+        publish(project_id, {
+            "type":   "thinking",
+            "status": "Initializing workflow...",
+            "role":   "conductor",
+        })
+
         wf     = _workflow()
         config = {"configurable": {"thread_id": thread_id}}
+
+        # ── Publish progress update before graph run ──
+        publish(project_id, {
+            "type":   "thinking",
+            "status": "Analyzing your request...",
+            "role":   "conductor",
+        })
 
         initial_state = {
             "project_id":           project_id,
@@ -310,8 +324,21 @@ def resume_workflow_task(
 
     db = _db()
     try:
+        # ── Publish thinking indicator immediately — fills the UI gap ──
+        publish(project_id, {
+            "type":   "thinking",
+            "status": "Processing your message...",
+            "role":   "conductor",
+        })
+
         wf     = _workflow()
         config = {"configurable": {"thread_id": thread_id}}
+
+        publish(project_id, {
+            "type":   "thinking",
+            "status": "Resuming workflow...",
+            "role":   "conductor",
+        })
 
         snap = wf.get_state(config)
         if not snap or not snap.values:

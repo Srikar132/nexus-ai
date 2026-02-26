@@ -16,6 +16,7 @@ import React, { useEffect, useRef } from "react";
 import { WorkspacePromptInput } from "./workspace-prompt-input";
 import { ChatMessageItem } from "./chat-message-item";
 import { StreamingMessage } from "./streaming-message";
+import { ThinkingIndicator } from "./thinking-indicator";
 import type { Message, UserAction, WorkflowStage, Plan } from "@/types/workflow";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -34,6 +35,8 @@ interface WorkspaceChatProps {
   inProgressMessage: InProgressMessage | null;
   active_role: string | null;
   is_streaming: boolean;
+  isThinking: boolean;
+  thinkingStatus: string | null;
   error: string | null;
   isLoadingHistory: boolean;
   isHistoryError: boolean;
@@ -46,6 +49,8 @@ const WorkspaceChat = ({
   messages,
   inProgressMessage,
   is_streaming,
+  isThinking,
+  thinkingStatus,
   error,
   isLoadingHistory,
   isSending,
@@ -56,7 +61,7 @@ const WorkspaceChat = ({
   // Scroll to bottom on any new content
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, inProgressMessage?.text]);
+  }, [messages.length, inProgressMessage?.text, isThinking]);
 
   const handleSubmit = (content: string) => {
     if (!content.trim()) return;
@@ -90,6 +95,12 @@ const WorkspaceChat = ({
           {messages.map((message) => (
             <ChatMessageItem key={message.id} message={message} />
           ))}
+
+          {/* ── Thinking indicator — fills the gap before streaming starts ── */}
+          {/* Shown after user sends until agent_start/text_chunk clears it  */}
+          {isThinking && !inProgressMessage && (
+            <ThinkingIndicator status={thinkingStatus} />
+          )}
 
           {/* ── Live in-progress message ── */}
           {/* Exists from agent_start until "done" commits it.           */}

@@ -1,10 +1,16 @@
 "use client";
 
 import { PlanPayload, useRightSidebar } from "@/store/right-sidebar-store";
-import { useWorkflowStore } from "@/store/workflow-store";
 import { ArtifactRightPreview } from "./artifact-right-preview";
+import { CodePanel } from "./code-panel";
+import type { UserAction } from "@/types/workflow";
 
-export const RightSidebar = () => {
+interface RightSidebarProps {
+  projectId: string;
+  sendAction: (action: UserAction) => void;
+}
+
+export const RightSidebar = ({ projectId, sendAction }: RightSidebarProps) => {
   const { currentState, payload, hide } = useRightSidebar();
 
   const renderContent = () => {
@@ -15,7 +21,14 @@ export const RightSidebar = () => {
           <ArtifactRightPreview 
             payload={payload as PlanPayload} 
             onClose={hide}
+            projectId={projectId}
+            sendAction={sendAction}
           />
+        );
+
+      case "code":
+        return (
+          <CodePanel onClose={hide} />
         );
 
       case "idle":
