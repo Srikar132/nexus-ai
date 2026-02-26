@@ -30,7 +30,7 @@ export interface Project {
 export interface CreateProjectData {
   name?: string | null;
   description?: string | null;
-  userPrompt?: string | null;
+  user_prompt?: string | null;
 }
 
 /**

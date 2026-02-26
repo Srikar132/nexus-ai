@@ -1,16 +1,18 @@
 /**
  * store/workflow-store.ts
  *
- * Zustand store — owns ONLY the live SSE-driven state.
- * NOT for server data (messages history, project info) — that's TanStack Query.
+ * Zustand store — owns ONLY the live SSE-driven DISPLAY state.
+ * NOT for message history — that's TanStack Query (single source of truth).
  *
  * What lives here:
  *  - stage          → current workflow stage (driven by SSE stage_change events)
- *  - activePlan     → plan artifact received from conductor
- *  - streamingText  → text chunks being streamed right now
- *  - activeRole     → which agent is currently active
- *  - liveMessages   → optimistic + streamed messages (not persisted history)
+ *  - active_plan     → plan artifact received from conductor
+ *  - streaming_text  → text chunks being streamed right now (ephemeral display)
+ *  - active_role     → which agent is currently active
  *  - error          → any workflow error
+ *
+ * What does NOT live here:
+ *  - messages       → TanStack Query owns this (refetched from DB after SSE done)
  */
 
 import { create } from "zustand";
@@ -21,31 +23,26 @@ import type { WorkflowStage, Plan, Message, SSEEvent } from "@/types/workflow";
 interface WorkflowStore {
   // Live state
   stage: WorkflowStage;
-  activePlan: Plan | null;
-  streamingText: string;
-  activeRole: string | null;
-  isStreaming: boolean;
+  active_plan: Plan | null;
+  streaming_text: string;        // Ephemeral — clears on agent_done
+  active_role: string | null;
+  is_streaming: boolean;
   error: string | null;
-
-  // Optimistic + streamed messages (merged with TanStack Query history in the hook)
-  liveMessages: Message[];
 
   // Actions — called by useWorkflow hook only, not directly by UI
   handleSSEEvent: (event: SSEEvent) => void;
-  addOptimisticMessage: (message: Message) => void;
   reset: () => void;
 }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
-const INITIAL: Omit<WorkflowStore, "handleSSEEvent" | "addOptimisticMessage" | "reset"> = {
+const INITIAL: Omit<WorkflowStore, "handleSSEEvent" | "reset"> = {
   stage: "idle",
-  activePlan: null,
-  streamingText: "",
-  activeRole: null,
-  isStreaming: false,
+  active_plan: null,
+  streaming_text: "",
+  active_role: null,
+  is_streaming: false,
   error: null,
-  liveMessages: [],
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -55,142 +52,74 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
   // ── The ONLY place SSE events mutate state ───────────────────────────────
   handleSSEEvent: (event: SSEEvent) => {
+    console.log("[WorkflowStore] Handling SSE event:", event);
+    
     switch (event.type) {
 
-      case "stage_change": {
-        // Flush any in-flight stream before switching stage
-        const { streamingText, activeRole } = get();
-        if (streamingText) {
-          const flushed: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            message_type: "text",
-            content: [{ type: "text", content: streamingText }],
-            created_at: new Date().toISOString(),
-          };
-          set((s) => ({
-            stage: event.stage,
-            streamingText: "",
-            isStreaming: false,
-            activeRole: null,
-            liveMessages: [...s.liveMessages, flushed],
-          }));
-        } else {
-          set({ stage: event.stage, error: null });
-        }
+      case "stage_change":
+        console.log("[WorkflowStore] Stage change:", event.stage);
+        set({ 
+          stage: event.stage, 
+          error: null,
+          streaming_text: "",      // Clear any orphaned streaming text
+          is_streaming: false,
+        });
         break;
-      }
 
       case "agent_start":
-        set({ activeRole: event.role });
+        console.log("[WorkflowStore] Agent start:", event.role);
+        set({ active_role: event.role });
         break;
 
-      case "agent_done": {
-        // Flush streamed text as a committed message
-        const { streamingText } = get();
-        if (streamingText) {
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            message_type: "text",
-            content: [{ type: "text", content: streamingText }],
-            created_at: new Date().toISOString(),
-          };
-          set((s) => ({
-            liveMessages: [...s.liveMessages, msg],
-            streamingText: "",
-            isStreaming: false,
-            activeRole: null,
-          }));
-        } else {
-          set({ activeRole: null, isStreaming: false });
-        }
+      case "agent_done":
+        console.log("[WorkflowStore] Agent done:", event.role);
+        // Agent finished — clear streaming display
+        set({ 
+          streaming_text: "",
+          is_streaming: false,
+          active_role: null,
+        });
         break;
-      }
 
       case "text_chunk":
+        const newText = get().streaming_text + event.chunk;
+        console.log("[WorkflowStore] Text chunk received. New length:", newText.length);
         set((s) => ({
-          isStreaming: true,
-          streamingText: s.streamingText + event.chunk,
-          activeRole: event.role,
+          is_streaming: true,
+          streaming_text: s.streaming_text + event.chunk,
+          active_role: event.role,
         }));
         break;
 
       case "artifact": {
-        // Flush any streaming text first
-        const { streamingText } = get();
-        const extra: Message[] = [];
-        if (streamingText) {
-          extra.push({
-            id: crypto.randomUUID(),
-            role: "assistant",
-            message_type: "text",
-            content: [{ type: "text", content: streamingText }],
-            created_at: new Date().toISOString(),
-          });
-        }
+        console.log("[WorkflowStore] Artifact received:", event.artifact_type);
+        const updates: Partial<WorkflowStore> = {};
 
-        // Create the artifact message
-        const artifactMsg: Message = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          message_type: "artifact",
-          content: [{
-            type: "artifact",
-            artifact_id: crypto.randomUUID(),
-            artifact_data: {
-              artifact_type: event.artifact_type,
-              title: event.title,
-              content: event.content,
-            },
-          }],
-          created_at: new Date().toISOString(),
-        };
-
-        const updates: Partial<WorkflowStore> = {
-          streamingText: "",
-          isStreaming: false,
-          liveMessages: [...get().liveMessages, ...extra, artifactMsg],
-        };
-
-        // If it's a plan artifact → store it + set stage to plan_review
+        // If it's a plan artifact → store it (but don't change stage yet - let stage_change handle it)
         if (event.artifact_type === "plan") {
-          updates.activePlan = event.content as Plan;
-          updates.stage = "plan_review";
+          updates.active_plan = event.content as Plan;
         }
 
+        // Don't clear streaming state here - let agent_done or stage_change handle it
         set(updates as any);
         break;
       }
 
       case "done":
-        // Flush any remaining stream
-        const { streamingText: remaining } = get();
-        if (remaining) {
-          const msg: Message = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            message_type: "text",
-            content: [{ type: "text", content: remaining }],
-            created_at: new Date().toISOString(),
-          };
-          set((s) => ({
-            liveMessages: [...s.liveMessages, msg],
-            streamingText: "",
-            isStreaming: false,
-          }));
-        }
+        console.log("[WorkflowStore] Stream done");
+        // Stream finished — backend has saved all messages to DB
+        // TanStack Query will refetch and get the persisted versions
+        set({ 
+          streaming_text: "",
+          is_streaming: false,
+        });
         break;
 
       case "error":
-        set({ stage: "error", error: event.message, isStreaming: false });
+        console.log("[WorkflowStore] Error:", event.message);
+        set({ stage: "error", error: event.message, is_streaming: false });
         break;
     }
-  },
-
-  // ── Optimistic message (e.g. user sent a message, show it instantly) ─────
-  addOptimisticMessage: (message: Message) => {
-    set((s) => ({ liveMessages: [...s.liveMessages, message] }));
   },
 
   reset: () => set({ ...INITIAL }),

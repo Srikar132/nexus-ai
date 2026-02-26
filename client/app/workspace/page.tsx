@@ -207,24 +207,12 @@ export default function WorkspacePage() {
             <div style={{ height: "calc(100vh - 56px)" }}>
                 <Group orientation="horizontal" className="h-full">
                     {/* Left Panel - Task List */}
-                    <Panel
-                        defaultSize={30} minSize={20}
-                    >
-                        <TaskPanel
-                            currentFile="tailwind.config.ts"
-                            currentAction="Setting up design system components in parallel"
-                        />
-                    </Panel>
-
-                    {/* Handle between left and center */}
-                    <Separator className="w-2 bg-border" />
-
                     {/* Center Panel - Chat/Conversation */}
-                    <Panel defaultSize={50} minSize={50}>
-                        <div className="h-full flex flex-col overflow-hidden bg-background">
+                    <Panel defaultSize={50} minSize={50} className="scrollbar-hide">
+                        <div className="h-full flex flex-col overflow-hidden scrollbar-hide bg-background">
                             {/* Chat messages — use native overflow instead of ScrollArea */}
-                            <div className="flex-1 overflow-y-auto px-4">
-                                <div className="max-w-3xl mx-auto py-4">
+                            <div className="flex-1 overflow-x-hidden scrollbar-hide px-4">
+                                <div className="max-w-3xl mx-auto  py-4">
                                     {messages.map((message) => (
                                         <ChatMessageItem key={message.id} message={message} />
                                     ))}
@@ -258,20 +246,20 @@ export default function WorkspacePage() {
                             </div>
                         </div>
                     </Panel>
-
-                    {/* Handle between center and right */}
                     <Separator className="w-2 bg-border" />
-
-                    {/* Right Panel - Preview Sidebar */}
                     <Panel
                         defaultSize={30} minSize={20}
                     >
-                        <PreviewSidebar
-                            isLoading={isBuilding}
-                            onRefresh={() => console.log("Refresh preview")}
-                            onOpenExternal={() => window.open("http://localhost:3000", "_blank")}
-                        />
+                        {/* <TaskPanel
+                            currentFile="tailwind.config.ts"
+                            currentAction="Setting up design system components in parallel"
+                        /> */}
                     </Panel>
+
+                    {/* Handle between left and center */}
+
+
+
                 </Group>
             </div>
         </div>

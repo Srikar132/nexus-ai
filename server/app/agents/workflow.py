@@ -1427,7 +1427,31 @@ def create_workflow(db_sync_url: str):
     )
     graph.add_edge("deployer", END)
 
-    checkpointer = PostgresSaver.from_conn_string(db_sync_url)
+    # Initialize PostgreSQL checkpointer with sync connection
+    # Create checkpointer using a sync connection pool
+    from psycopg_pool import ConnectionPool
+    
+    # Fix SSL parameter: Neon uses ?ssl=require but psycopg expects ?sslmode=require
+    conninfo = (
+        db_sync_url
+        .replace("?ssl=require", "?sslmode=require")
+        .replace("&ssl=require", "&sslmode=require")
+    )
+    
+    conn_kwargs = {
+        "autocommit": True,
+        "prepare_threshold": 0,
+    }
+    
+    # Create sync connection pool
+    pool = ConnectionPool(
+        conninfo=conninfo,
+        max_size=10,
+        kwargs=conn_kwargs,
+    )
+    
+    # Create checkpointer with the pool
+    checkpointer = PostgresSaver(pool)
     checkpointer.setup()
 
     return graph.compile(

@@ -72,7 +72,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     const res = await fetch(`${apiUrl}/api/v1/users/signin`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ githubToken: account.access_token }),
+                        body: JSON.stringify({ github_token: account.access_token }),
                     });
 
                     if (!res.ok) {

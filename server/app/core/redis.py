@@ -23,7 +23,10 @@ def get_channel(project_id: str) -> str:
 
 def publish(project_id: str, event: dict) -> None:
     """Publish event from worker to Redis channel"""
-    sync_client.publish(get_channel(project_id), json.dumps(event))
+    channel = get_channel(project_id)
+    payload = json.dumps(event)
+    num_subscribers = sync_client.publish(channel, payload)
+    print(f"[REDIS PUB] channel={channel} type={event.get('type')} subscribers={num_subscribers}")
 
 
 async def subscribe_and_stream(project_id: str):
@@ -34,17 +37,20 @@ async def subscribe_and_stream(project_id: str):
     """
     redis  = await get_async_redis()
     pubsub = redis.pubsub()
-    await pubsub.subscribe(get_channel(project_id))
+    channel = get_channel(project_id)
+    await pubsub.subscribe(channel)
+    print(f"[REDIS SUB] Subscribed to channel={channel}")
     try:
         async for raw in pubsub.listen():
             if raw["type"] != "message":
                 continue
             event = json.loads(raw["data"])
+            print(f"[REDIS SUB] Received event type={event.get('type')} on channel={channel}")
             yield f"data: {json.dumps(event)}\n\n"
             if event.get("type") in ("done", "build_failed", "worker_done"):
                 break
             await asyncio.sleep(0)
     finally:
-        await pubsub.unsubscribe(get_channel(project_id))
+        await pubsub.unsubscribe(channel)
         await pubsub.close()
         await redis.aclose()

@@ -56,15 +56,28 @@ celery_app.conf.update(
 
 # ── Internal helpers ──────────────────────────────────────────────
 
+def _fix_ssl_param(url: str) -> str:
+    """
+    Neon/Supabase URLs use ``?ssl=require`` which asyncpg understands,
+    but psycopg2 and psycopg (libpq) do NOT.
+    Replace ``ssl=require`` → ``sslmode=require`` so sync drivers work.
+    """
+    return (
+        url
+        .replace("?ssl=require", "?sslmode=require")
+        .replace("&ssl=require", "&sslmode=require")
+    )
+
+
 def _workflow():
     from app.agents.workflow import create_workflow
-    return create_workflow(settings.DATABASE_URL)
+    return create_workflow(_fix_ssl_param(settings.DATABASE_URL))
 
 
 def _db():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
-    return sessionmaker(create_engine(settings.DATABASE_URL))()
+    return sessionmaker(create_engine(_fix_ssl_param(settings.DATABASE_URL)))()
 
 def _get_user(db, user_id: str):
     from app.models import User
@@ -260,7 +273,8 @@ def start_workflow_task(
         # (set in initial_state above) and process the first message.
         # After conductor finishes, it loops back to itself with current_user_input=None,
         # which triggers interrupt_before again — pausing for the next user message.
-        for _ in wf.stream(Command(resume=None), config=config):
+        # Note: Use None (not Command(resume=None)) to avoid LangGraph 1.0.9 bug
+        for _ in wf.stream(None, config=config):
             pass
 
         snap  = wf.get_state(config)

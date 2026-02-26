@@ -37,6 +37,7 @@ interface WorkspacePromptInputProps {
     isProcessing?: boolean;
     placeholder?: string;
     className?: string;
+    projectId?: string; // Add projectId to construct localStorage key
 }
 
 export function WorkspacePromptInput({
@@ -44,6 +45,7 @@ export function WorkspacePromptInput({
     isProcessing = false,
     placeholder = "Ask NexusForge...",
     className,
+    projectId,
 }: WorkspacePromptInputProps) {
     const [value, setValue] = useState("");
     const [attachments, setAttachments] = useState<File[]>([]);
@@ -52,6 +54,40 @@ export function WorkspacePromptInput({
     const [isRecording, setIsRecording] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Auto-populate from localStorage on mount (for new projects)
+    useEffect(() => {
+        if (!projectId) return;
+
+        const storageKey = `project-${projectId}-initial-prompt`;
+        const stored = localStorage.getItem(storageKey);
+        
+        if (stored) {
+            try {
+                const { prompt, autoSend, timestamp } = JSON.parse(stored);
+                
+                // Only auto-populate if stored within last 5 minutes (prevent stale data)
+                const isRecent = Date.now() - timestamp < 5 * 60 * 1000;
+                
+                if (isRecent && prompt) {
+                    setValue(prompt);
+                    
+                    // Auto-send if flag is set
+                    if (autoSend && onSubmit) {
+                        // Small delay to ensure UI is ready
+                        setTimeout(() => {
+                            onSubmit(prompt, []);
+                        }, 500);
+                    }
+                }
+                
+                // Clear localStorage after reading (one-time use)
+                localStorage.removeItem(storageKey);
+            } catch (err) {
+                console.error("Failed to parse initial prompt from localStorage:", err);
+            }
+        }
+    }, [projectId, onSubmit]);
 
     // Auto-resize textarea based on content
     const autoResize = useCallback(() => {
@@ -114,7 +150,7 @@ export function WorkspacePromptInput({
                                 ) : (
                                     <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
                                 )}
-                                <span className="max-w-[150px] truncate">{file.name}</span>
+                                <span className="max-w-37.5 truncate">{file.name}</span>
                                 <button
                                     onClick={() => removeAttachment(index)}
                                     className="p-0.5 hover:bg-muted rounded"
@@ -129,7 +165,7 @@ export function WorkspacePromptInput({
                 {/* Main input container */}
                 <div
                     className={cn(
-                        "flex flex-col bg-card border border-border transition-all duration-200",
+                        "flex flex-col bg-secondary  transition-all duration-200",
                         attachments.length > 0 ? "rounded-b-xl" : "rounded-xl",
                         isFocused && "ring-2 ring-primary/30 border-primary/50"
                     )}
@@ -155,7 +191,7 @@ export function WorkspacePromptInput({
                     </div>
 
                     {/* Bottom toolbar */}
-                    <div className="flex items-center justify-between px-3 py-2 border-t border-border/50">
+                    <div className="flex items-center justify-between px-3 py-2 ">
                         {/* Left actions */}
                         <div className="flex items-center gap-1">
                             {/* Attach menu */}
@@ -193,21 +229,7 @@ export function WorkspacePromptInput({
                                     </DropdownMenuCheckboxItem>
                                 </DropdownMenuContent>
                             </DropdownMenu>
-
-                            {/* Visual edits button */}
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-8 gap-1.5 text-xs rounded-lg"
-                                    >
-                                        <Wand2 className="h-3.5 w-3.5" />
-                                        <span className="hidden sm:inline">Visual edits</span>
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Toggle visual editing mode</TooltipContent>
-                            </Tooltip>
+                            
                         </div>
 
                         {/* Right actions */}

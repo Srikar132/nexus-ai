@@ -5,6 +5,7 @@ from typing import List, Optional
 from app.models.project import Project
 from app.core.llm import get_llm
 import json
+import re
 
 
 class ProjectRepo:
@@ -36,12 +37,22 @@ class ProjectRepo:
                         {"role": "user", "content": f"Create a project name and description based on this user prompt: '{user_prompt}'. Return only a JSON object with 'name' and 'description' fields. Example: {{\"name\": \"Project Name\", \"description\": \"Project description\"}}"}
                     ]
                 )
+                
+                print("LLM response for project name/description generation:", response.content)
 
-                data = json.loads(response.content)
+                # Extract JSON from the response (handles markdown code blocks)
+                json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+                if not json_match:
+                    raise ValueError("No JSON object found in response")
+                
+                data = json.loads(json_match.group())
                 name = data.get("name", f"Project for: {user_prompt[:50]}...")
                 description = data.get("description", user_prompt)
-            except (json.JSONDecodeError, Exception) as e:
+            except (json.JSONDecodeError, ValueError, Exception) as e:
                 # Fallback if LLM fails or returns invalid JSON
+                print("Error generating project name/description from LLM:", e)
+                print("Raw content:", response.content if 'response' in locals() else 'No response')
+                
                 name = f"Project for: {user_prompt[:50]}..."
                 description = user_prompt
         

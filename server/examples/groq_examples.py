@@ -152,10 +152,10 @@ if __name__ == "__main__":
         exit(1)
     
     try:
-        groq_model_details()
+        # groq_model_details()
         # groq_model_comparison()
         # groq_streaming_demo()
-        # groq_code_generation() 
+        groq_code_generation() 
         # groq_tool_usage()
         # groq_creative_writing()
         # groq_performance_test()

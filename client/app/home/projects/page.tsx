@@ -1,4 +1,3 @@
-import projectServices from "@/lib/services/project-services";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,14 +21,20 @@ import {
 import { Search, Plus , Info, ExternalLink } from "lucide-react";
 import { auth } from "@/lib/auth";
 import Link from "next/link";
+import { projectsAPI } from "@/lib/api";
 
 const ProjectsPage = async () => {
 
   try {
 
     const session = await auth();
-    const data = await projectServices.getProjects();
-    
+    const response = await projectsAPI.list({ page: 1, limit: 10 });
+    const data = response.data;
+
+    if (!data) {
+      throw new Error("Failed to fetch projects");
+    }
+
     return (
       <div className="space-y-6 p-6">
         {/* Header */}
@@ -89,7 +94,7 @@ const ProjectsPage = async () => {
                   <Info className="h-4 w-4" />
                 </div>
                 <div className="text-2xl font-bold">
-                  {data.total}
+                  {data?.total}
                 </div>
               </div>
             </div>
@@ -128,7 +133,7 @@ const ProjectsPage = async () => {
             </TableHeader>
             <TableBody>
               {data?.projects?.length > 0 ? (
-                data.projects.map((project) => (
+                data?.projects.map((project) => (
                   <TableRow key={project.id} className="cursor-pointer">
                     <TableCell>
                       <Link href={`/project/${project.id}`} className="flex items-center gap-2 w-full">

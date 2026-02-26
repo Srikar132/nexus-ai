@@ -8,26 +8,26 @@ export type SubscriptionTier = "free" | "pro" | "enterprise";
 
 export interface User {
   id: string; // UUID
-  githubId: string;
+  github_id: string;
   email: string;
   username?: string;
   
   // User preferences
-  preferredStack?: string | null; // e.g., "nextjs", "fastapi", "node"
-  preferredLanguage?: string | null; // e.g., "python", "typescript"
-  developerLevel: DeveloperLevel;
+  preferred_stack?: string | null; // e.g., "nextjs", "fastapi", "node"
+  preferred_language?: string | null; // e.g., "python", "typescript"
+  developer_level: DeveloperLevel;
   
   // Onboarding
-  onboardingCompleted: number; // 0 = false, 1 = true
+  onboarding_completed: number; // 0 = false, 1 = true
   
   // Subscription
-  subscriptionTier: SubscriptionTier;
-  monthlyBuildsUsed: number;
-  monthlyBuildsLimit: number;
+  subscription_tier: SubscriptionTier;
+  monthly_builds_used: number;
+  monthly_builds_limit: number;
   
   // Timestamps
-  createdAt: string; // ISO date string
-  lastActiveAt: string; // ISO date string
+  created_at: string; // ISO date string
+  last_active_at: string; // ISO date string
 }
 
 
@@ -36,12 +36,12 @@ export interface User {
  * Onboarding form data
  */
 export interface UpdateUserData {
-  preferredStack: string;
-  preferredLanguage: string;
-  developerLevel: DeveloperLevel;
+  preferred_stack: string;
+  preferred_language: string;
+  developer_level: DeveloperLevel;
 }
 
 
 export interface CreateUserData {
-    githubToken : string;
+    github_token: string;
 }

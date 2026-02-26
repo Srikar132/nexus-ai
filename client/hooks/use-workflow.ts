@@ -5,7 +5,7 @@
  *
  * TanStack Query  → fetches + caches message history (server data)
  * Zustand store   → owns live SSE state (stage, streaming, plan, liveMessages)
- * messageService  → all CRUD — cookies sent automatically via credentials:"include"
+ * messagesAPI     → all CRUD — cookies sent automatically via credentials:"include"
  *
  * SSE: fetch("/api/v1/.../stream", { credentials: "include" })
  * Next.js rewrite proxies /api/v1/* → FastAPI
@@ -15,7 +15,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useWorkflowStore } from "@/store/workflow-store";
-import messageService from "@/lib/services/message-service";
+import { messagesAPI } from "@/lib/api";
 import type { UserAction, Message, SSEEvent } from "@/types/workflow";
 
 // ─── Query key factory ───────────────────────────────────────────────────────
@@ -33,14 +33,12 @@ export function useWorkflow(projectId: string) {
   // ── Zustand — live SSE state ─────────────────────────────────────────────
   const {
     stage,
-    activePlan,
-    streamingText,
-    activeRole,
-    isStreaming,
+    active_plan,
+    streaming_text,
+    active_role,
+    is_streaming,
     error,
-    liveMessages,
     handleSSEEvent,
-    addOptimisticMessage,
     reset,
   } = useWorkflowStore();
 
@@ -51,7 +49,11 @@ export function useWorkflow(projectId: string) {
     isError: isHistoryError,
   } = useQuery({
     queryKey: workflowKeys.messages(projectId),
-    queryFn: () => messageService.getMessages(projectId, 0, 50),
+    queryFn: async () => {
+      const response = await messagesAPI.list(projectId, 0, 50);
+      if (response.error) throw new Error(response.error);
+      return response.data!;
+    },
     enabled: !!projectId,
     staleTime: 30_000,           // fresh for 30s — SSE keeps us live anyway
     refetchOnWindowFocus: false, // SSE handles live updates, no need to refetch
@@ -73,71 +75,73 @@ export function useWorkflow(projectId: string) {
     if (restored) useWorkflowStore.setState({ stage: restored as any });
   }, [historyData?.active_build, stage]);
 
-  // ── SSE connection ────────────────────────────────────────────────────────
-  const abortRef    = useRef<AbortController | null>(null);
-  const retryRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ── SSE connection (direct to FastAPI, bypasses Next.js proxy buffering) ──
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const retryRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const connectSSE = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
+    // Guard: don't connect if projectId is missing or invalid
+    if (!projectId || projectId === "undefined") return;
 
-    fetch(`/api/v1/projects/${projectId}/messages/stream`, {
-      credentials: "include",                    // sends authjs.session-token cookie
-      signal:      abortRef.current.signal,
-      headers:     { Accept: "text/event-stream" },
-    })
-      .then((res) => {
-        if (!res.ok || !res.body) return;
+    // Close existing connection
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
 
-        const reader  = res.body.getReader();
-        const decoder = new TextDecoder();
-        let   buffer  = "";
+    // Connect DIRECTLY to FastAPI (bypasses Next.js rewrite proxy buffering)
+    // CORS is configured on FastAPI: allow_origins=["http://localhost:3000"], allow_credentials=True
+    // withCredentials:true sends authjs.session-token cookie cross-origin
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    const url = `${API_BASE}/api/v1/projects/${projectId}/messages/stream`;
+    console.log("[SSE] Connecting directly to FastAPI:", url);
 
-        const read = () => {
-          reader.read().then(({ done, value }) => {
-            if (done) return;
+    const eventSource = new EventSource(url, { withCredentials: true });
 
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split("\n\n");
-            buffer = parts.pop() ?? "";
+    eventSource.onopen = () => {
+      console.log("[SSE] Connection opened");
+    };
 
-            for (const part of parts) {
-              const dataLine = part.split("\n").find((l) => l.startsWith("data:"));
-              if (!dataLine) continue;
-              try {
-                const event: SSEEvent = JSON.parse(dataLine.slice(5).trim());
-                handleSSEEvent(event);
+    eventSource.onmessage = (event) => {
+      try {
+        console.log("[SSE] Event received:", event.data);
+        const sseEvent: SSEEvent = JSON.parse(event.data);
+        handleSSEEvent(sseEvent);
 
-                // When stream ends, refresh persisted history via TanStack Query
-                if (event.type === "done") {
-                  queryClient.invalidateQueries({
-                    queryKey: workflowKeys.messages(projectId),
-                  });
-                }
-              } catch {
-                // skip malformed frames
-              }
-            }
-            read();
-          }).catch((err) => {
-            if ((err as Error).name === "AbortError") return;
-            retryRef.current = setTimeout(connectSSE, 3000); // reconnect on drop
+        // When stream ends, refresh persisted history via TanStack Query
+        if (sseEvent.type === "done") {
+          queryClient.invalidateQueries({
+            queryKey: workflowKeys.messages(projectId),
           });
-        };
+        }
+      } catch (err) {
+        console.error("[SSE] Failed to parse event:", err);
+      }
+    };
 
-        read();
-      })
-      .catch((err) => {
-        if ((err as Error).name === "AbortError") return;
+    eventSource.onerror = (err) => {
+      console.error("[SSE] Connection error:", err);
+      eventSource.close();
+
+      // Don't retry if we're in a stable state (done/idle) — stream closed normally
+      const currentStage = useWorkflowStore.getState().stage;
+      if (currentStage !== "idle" && currentStage !== "complete" && currentStage !== "error") {
+        // Retry connection after 3s only if workflow is still active
         retryRef.current = setTimeout(connectSSE, 3000);
-      });
+      }
+    };
+
+    eventSourceRef.current = eventSource;
   }, [projectId, handleSSEEvent, queryClient]);
 
   // Connect on mount, clean up on unmount / project change
   useEffect(() => {
     connectSSE();
     return () => {
-      abortRef.current?.abort();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
       if (retryRef.current) clearTimeout(retryRef.current);
     };
   }, [connectSSE]);
@@ -147,24 +151,68 @@ export function useWorkflow(projectId: string) {
 
   // ── Send action mutation ──────────────────────────────────────────────────
   const sendMutation = useMutation({
-    mutationFn: (action: UserAction) =>
-      messageService.sendAction(projectId, action),
+    mutationFn: async (action: UserAction) => {
+      const response = await messagesAPI.sendAction(projectId, action);
+      if (response.error) throw new Error(response.error);
+      return response.data!;
+    },
 
-    onMutate: (action) => {
-      // Show user message instantly (optimistic) before server responds
+    onMutate: async (action) => {
+      // Show user message instantly (optimistic) with a temporary ID
       if ("content" in action && action.content) {
+        const tempId = `temp-${Date.now()}`;
         const optimistic: Message = {
-          id:           crypto.randomUUID(),
+          id:           tempId,
           role:         "user",
           message_type: "user_prompt",
           content:      [{ type: "text", content: action.content }],
           created_at:   new Date().toISOString(),
         };
-        addOptimisticMessage(optimistic);
+        
+        // Optimistically update TanStack Query cache (NOT Zustand)
+        queryClient.setQueryData(
+          workflowKeys.messages(projectId),
+          (old: any) => ({
+            ...old,
+            messages: [...(old?.messages ?? []), optimistic],
+          })
+        );
+        
+        return { tempId };
       }
     },
 
-    onError: (err) => {
+    onSuccess: (response, action, context) => {
+      // Replace temp message with real DB message ID
+      if (context?.tempId) {
+        queryClient.setQueryData(
+          workflowKeys.messages(projectId),
+          (old: any) => ({
+            ...old,
+            messages: (old?.messages ?? []).map((m: Message) =>
+              m.id === context.tempId
+                ? { ...m, id: response.user_message_id }
+                : m
+            ),
+          })
+        );
+      }
+    },
+
+    onError: (err, action, context) => {
+      // Remove optimistic message on error
+      if (context?.tempId) {
+        queryClient.setQueryData(
+          workflowKeys.messages(projectId),
+          (old: any) => ({
+            ...old,
+            messages: (old?.messages ?? []).filter(
+              (m: Message) => m.id !== context.tempId
+            ),
+          })
+        );
+      }
+      
       useWorkflowStore.setState({
         stage: "error",
         error: err instanceof Error ? err.message : "Failed to send",
@@ -172,27 +220,25 @@ export function useWorkflow(projectId: string) {
     },
   });
 
-  // ── Merge persisted history + live messages ───────────────────────────────
-  // Deduplicate by id — optimistic messages disappear once TanStack Query
-  // refreshes and the DB version comes back.
-  const messages: Message[] = (() => {
-    const persisted = historyData?.messages ?? [];
-    const liveIds   = new Set(liveMessages.map((m) => m.id));
-    return [
-      ...persisted.filter((m) => !liveIds.has(m.id)),
-      ...liveMessages,
-    ];
-  })();
+  // ── Merge persisted history + live streaming ──────────────────────────────
+  // TanStack Query = source of truth for all saved messages
+  // Zustand = ONLY for in-flight streaming text display
+  // 
+  // Read directly from cache to get optimistic updates instantly
+  const cachedData = queryClient.getQueryData<typeof historyData>(
+    workflowKeys.messages(projectId)
+  );
+  const messages: Message[] = cachedData?.messages ?? historyData?.messages ?? [];
 
   // ── Public API ────────────────────────────────────────────────────────────
   return {
     // Data
     messages,
     stage,
-    activePlan,
-    streamingText,
-    activeRole,
-    isStreaming,
+    active_plan,
+    streaming_text,
+    active_role,
+    is_streaming,
     error,
 
     // Loading flags

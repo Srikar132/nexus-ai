@@ -304,9 +304,9 @@ async def stream_messages(
         subscribe_and_stream(str(project_id)),
         media_type = "text/event-stream",
         headers    = {
-            "Cache-Control":               "no-cache",
-            "X-Accel-Buffering":           "no",
-            "Access-Control-Allow-Origin": "*",
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection":        "keep-alive",
         }
     )
 

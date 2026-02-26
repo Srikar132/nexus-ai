@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useVoiceRecording } from "@/hooks/use-voice-recording";
 import { QuickStart } from "./quick-start";
 import Typewriter from "typewriter-effect";
-import projectServices from "@/lib/services/project-services";
+import { projectsAPI } from "@/lib/api";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PLACEHOLDER_PHRASES = [
@@ -73,9 +73,16 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
     setIsBuilding(true);
 
     try {
-      const project = await projectServices.createProject({
-        userPrompt: prompt
+      const response = await projectsAPI.create({
+        user_prompt: prompt
       });
+
+      if (response.error) {
+        console.error("Failed to create project:", response.error);
+        return;
+      }
+
+      const project = response.data!;
 
       localStorage.setItem(
         `project-${project.id}-initial-prompt`,
@@ -97,7 +104,7 @@ function PromptInput({ onExternalPrompt }: { onExternalPrompt?: (fn: (p: string)
       {/* Card */}
       <div
         className={`
-          relative rounded-2xl border bg-card p-4 flex flex-col gap-4
+          relative rounded-2xl border bg-secondary p-4 flex flex-col gap-4
           transition-all duration-300 ease-out
           ${isFocused
             ? "border-primary/40 shadow-[0_0_0_1px_oklch(0.61_0.225_280/20%),0_8px_32px_oklch(0_0_0/40%)]"

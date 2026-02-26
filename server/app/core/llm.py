@@ -261,6 +261,7 @@ class GroqProvider(BaseLLMProvider):
             raise ImportError("groq package not installed")
         
         self.config = config
+        self.client = Groq(api_key=config.api_key)
     
     def chat_completion(self, messages: List[Dict], **kwargs) -> LLMResponse:
         response = self.client.chat.completions.create(

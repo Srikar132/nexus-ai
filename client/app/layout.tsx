@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { ProjectDialogProvider } from "@/providers/project-dialog-provider";
+import TanstackClientProvider from "@/providers/query-client-provider";
 
 const urbanist = Urbanist({
   variable: "--font-urbanist",
@@ -36,9 +37,11 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <SessionProvider>
             <TooltipProvider>
+              <TanstackClientProvider>
               <ProjectDialogProvider>
                 {children}
               </ProjectDialogProvider>
+            </TanstackClientProvider>
             </TooltipProvider>
           </SessionProvider>
         </ThemeProvider>

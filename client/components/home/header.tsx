@@ -1,8 +1,6 @@
 import { auth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import {  Bell } from "lucide-react";
 import Link from "next/link";
 

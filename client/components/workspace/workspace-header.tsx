@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
+import Image from "next/image";
 interface WorkspaceHeaderProps {
     projectName?: string;
     isBuilding?: boolean;
@@ -46,11 +47,11 @@ export function WorkspaceHeader({
             <div className="flex items-center gap-3">
                 {/* Logo */}
                 <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-primary/10">
-                        <Sparkles className="h-5 w-5 text-primary" />
+                    <div className="flex aspect-square size-8 min-w-8 min-h-8 items-center justify-center rounded-lg text-sidebar-primary-foreground">
+                        <Image width={86} height={86} src="/images/logo.png" alt="Nexus AI Logo" className="size-8 object-contain" />
                     </div>
                     <span className="font-bold text-lg tracking-tight hidden sm:block">
-                        Nexus<span className="text-primary">Forge</span>
+                        Nexus<span className="text-primary">AI</span>
                     </span>
                 </div>
 
@@ -62,7 +63,7 @@ export function WorkspaceHeader({
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="gap-2 font-medium max-w-[200px]"
+                            className="gap-2 font-medium max-w-50"
                         >
                             <span className="truncate">{projectName}</span>
                             <ChevronDown className="h-4 w-4 opacity-60" />
@@ -82,26 +83,13 @@ export function WorkspaceHeader({
                     </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* Build status badge */}
-                {isBuilding && (
-                    <Badge variant="secondary" className="gap-1.5 animate-pulse">
-                        <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
-                        </span>
-                        Building...
-                    </Badge>
-                )}
+
             </div>
 
             {/* Center section - View tabs */}
             <div className="hidden md:flex">
                 <Tabs value={activeTab} onValueChange={onTabChange}>
                     <TabsList className="bg-muted/50 h-9">
-                        <TabsTrigger value="preview" className="gap-1.5 text-xs px-3">
-                            <Eye className="h-3.5 w-3.5" />
-                            Preview
-                        </TabsTrigger>
                         <TabsTrigger value="code" className="gap-1.5 text-xs px-3">
                             <Code2 className="h-3.5 w-3.5" />
                             Code
@@ -120,46 +108,16 @@ export function WorkspaceHeader({
 
             {/* Right section - Actions */}
             <div className="flex items-center gap-2">
-                {/* Squad selector dropdown */}
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="gap-2 hidden lg:flex">
-                            <Shield className="h-4 w-4" />
-                            Squads
-                            <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                        <DropdownMenuItem className="gap-2">
-                            <Code2 className="h-4 w-4 text-blue-500" />
-                            <div>
-                                <div className="font-medium">SpectraCode</div>
-                                <div className="text-xs text-muted-foreground">Build Squad</div>
-                            </div>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2">
-                            <Shield className="h-4 w-4 text-red-500" />
-                            <div>
-                                <div className="font-medium">ThreatNest</div>
-                                <div className="text-xs text-muted-foreground">Security Squad</div>
-                            </div>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2">
-                            <Rocket className="h-4 w-4 text-green-500" />
-                            <div>
-                                <div className="font-medium">OpsOrchestra</div>
-                                <div className="text-xs text-muted-foreground">Deploy Squad</div>
-                            </div>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2">
-                            <Activity className="h-4 w-4 text-purple-500" />
-                            <div>
-                                <div className="font-medium">ObserveIQ</div>
-                                <div className="text-xs text-muted-foreground">Monitor Squad</div>
-                            </div>
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                {/* Build status badge */}
+                {isBuilding && (
+                    <Badge variant="secondary" className="gap-1.5 animate-pulse">
+                        <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                        </span>
+                        Building...
+                    </Badge>
+                )}
 
                 <Button
                     variant="outline"
@@ -171,14 +129,7 @@ export function WorkspaceHeader({
                     <span className="hidden sm:inline">Share</span>
                 </Button>
 
-                <Button
-                    size="sm"
-                    className="gap-2 bg-primary hover:bg-primary/90"
-                    onClick={onDeploy}
-                >
-                    <Rocket className="h-4 w-4" />
-                    <span className="hidden sm:inline">Deploy</span>
-                </Button>
+
             </div>
         </header>
     );

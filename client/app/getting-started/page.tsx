@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Infinity, CheckCircle2, ChevronRight, Loader2 } from "lucide-react";
 import Link from "next/link";
-import userServices from "@/lib/services/user-servces";
+import { usersAPI } from "@/lib/api";
 import type { DeveloperLevel, UpdateUserData } from "@/types/user";
 import { useActionState } from "react";
 import { useSession } from "next-auth/react";
@@ -85,24 +85,26 @@ const GettingStartedPage = () => {
   ): Promise<ActionState> {
     try {
       const data: UpdateUserData = {
-        preferredStack: formData.get("preferredStack") as string,
-        preferredLanguage: formData.get("preferredLanguage") as string,
-        developerLevel: formData.get("developerLevel") as DeveloperLevel,
+        preferred_stack: formData.get("preferredStack") as string,
+        preferred_language: formData.get("preferredLanguage") as string,
+        developer_level: formData.get("developerLevel") as DeveloperLevel,
       };
 
       // Validate data
-      if (!data.preferredStack || !data.preferredLanguage || !data.developerLevel) {
+      if (!data.preferred_stack || !data.preferred_language || !data.developer_level) {
         return { error: "Please complete all steps" };
       }
 
       // Call backend API to complete onboarding
-      await userServices.completeOnboarding(data);
-
+      const response = await usersAPI.completeOnboarding(data);
+      
+      if (response.error) {
+        return { error: response.error };
+      }
 
       // Update session with new onboardingCompleted status
       // This will re-run the JWT and session callbacks in auth.ts
       await update({ onboardingCompleted: true });
-
 
       // Redirect to home
       router.push("/home");

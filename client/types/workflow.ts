@@ -54,10 +54,11 @@ export interface Plan {
 
 /**
  * A message in the chat — stored in DB, loaded on mount.
+ * Role matches backend: user | conductor | artificer | guardian | deployer | system
  */
 export interface Message {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "conductor" | "artificer" | "guardian" | "deployer" | "system";
   message_type: string;
   content: Array<
     | { type: "text"; content: string }
@@ -72,10 +73,10 @@ export interface Message {
 export interface WorkflowState {
   stage: WorkflowStage;
   messages: Message[];
-  activePlan: Plan | null;
-  isStreaming: boolean;
-  streamingText: string;    // Text currently being streamed
-  activeRole: string | null; // Which agent is active right now
+  active_plan: Plan | null;
+  is_streaming: boolean;
+  streaming_text: string;    // Text currently being streamed
+  active_role: string | null; // Which agent is active right now
   error: string | null;
 }
 
@@ -86,6 +87,6 @@ export type UserAction =
   | { action: "direct_build"; content: string }    // Build now button
   | { action: "request_plan"; content: string }    // Plan button
   | { action: "approve_plan" }                     // Approve button on plan card
-  | { action: "edit_plan"; editedPlan: Plan }      // Save edits on plan card
+  | { action: "edit_plan"; edited_plan: Plan }      // Save edits on plan card
   | { action: "send_message"; content: string }    // Regular chat
   | { action: "provide_env_vars"; vars: Record<string, string> }; // Deploy env vars

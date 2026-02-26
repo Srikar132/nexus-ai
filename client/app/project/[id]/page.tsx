@@ -1,4 +1,37 @@
-import projectServices from "@/lib/services/project-services";
+import WorkspaceClient from "@/components/workspace/workspace-client";
+import { projectsAPI } from "@/lib/api";
+import { Metadata } from "next";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: { id: string };
+}): Promise<Metadata> {
+  try {
+    const { id } = await params;
+    const response = await projectsAPI.getById(id);
+    
+    if (response.error || !response.data) {
+      return {
+        title: "Project | NexusAI",
+        description: "AI-powered development workspace",
+      };
+    }
+
+    const project = response.data;
+    return {
+      title: `${project.name} | NexusAI`,
+      description: project.description || `Working on ${project.name} project`,
+    };
+  } catch (error) {
+    return {
+      title: "Project | NexusAI",
+      description: "AI-powered development workspace",
+    };
+  }
+}
+
+// export const revalidate = 100000;
 
 const ProjectPage = async ({
   params,
@@ -7,24 +40,25 @@ const ProjectPage = async ({
     id: string;
   };
 }) => {
-  let id: string | null = null;
   let hasError = false;
 
   try {
-    const resolvedParams = await params;
-    id = resolvedParams.id;
+    const { id } = await params;
+    const response = await projectsAPI.getById(id);
 
-    const project = await projectServices.getProject(id);
+    if (response.error || !response.data) {
+      throw new Error(response.error || "Failed to fetch project");
+    }
 
-
-
+    const project = response.data;
 
     return (
-      <main className="w-screen h-screen p-8 overflow-hidden">
-        <div className={"flex flex-col w-full h-full border border-red-500"}>
-
+        <div className="h-screen w-screen bg-background flex flex-col overflow-hidden">
+            <WorkspaceClient
+                initialProject={project}
+                
+            />
         </div>
-      </main>
     );
   } catch (error) {
     console.error("Error fetching project:", error);
