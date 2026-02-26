@@ -13,27 +13,28 @@ interface AssistantMessageProps {
 
 export function AssistantMessage({ message }: AssistantMessageProps) {
   return (
-    <div className="flex items-start gap-3 py-4">
-      {/* AI Avatar */}
-      <Avatar className="size-8 shrink-0">
-        <AvatarFallback className="bg-primary/10 text-primary">
-          <Bot className="size-4" />
-        </AvatarFallback>
-      </Avatar>
-
-      {/* Message Content */}
-      <div className="flex-1 space-y-3">
+    <div className="py-2">
+      {/* AI Avatar and Label at the top */}
+      <div className="flex items-center gap-2 mb-2">
+        <Avatar className="size-6 shrink-0">
+          <AvatarFallback className="bg-primary/10 text-primary">
+            <Bot className="size-3" />
+          </AvatarFallback>
+        </Avatar>
         <div className="text-xs font-medium text-muted-foreground">
           NexusAI
         </div>
+      </div>
 
+      {/* Message Content */}
+      <div className="space-y-2">
         {/* Render all content blocks */}
         {message.content.map((block, idx) => {
           if (block.type === "text") {
             return (
               <div
                 key={idx}
-                className="bg-muted/50 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[95%]"
+                className="bg-muted/50 rounded-2xl rounded-tl-sm px-3 py-2"
               >
                 <MarkdownContent content={block.content} />
               </div>

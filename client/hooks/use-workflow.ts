@@ -3,13 +3,18 @@
 /**
  * hooks/use-workflow.ts
  *
- * TanStack Query  → fetches + caches message history (server data)
- * Zustand store   → owns live SSE state (stage, streaming, plan, liveMessages)
- * messagesAPI     → all CRUD — cookies sent automatically via credentials:"include"
+ * REDESIGN:
+ *  - TanStack Query = initial history load ONLY → feeds into Zustand via hydrateMessages()
+ *  - SSE = live state, builds messages[] in Zustand directly
+ *  - No refetch after SSE "done" — Zustand commits the message locally
+ *  - Background invalidation only (for cache consistency if user navigates away and back)
  *
- * SSE: fetch("/api/v1/.../stream", { credentials: "include" })
- * Next.js rewrite proxies /api/v1/* → FastAPI
- * FastAPI reads authjs.session-token cookie via NextAuthJWT — no token needed here.
+ * Data flow:
+ *  mount → fetchHistory → hydrateMessages(zustand)
+ *  user sends → addOptimisticMessage → server confirms → confirmOptimisticMessage
+ *  SSE chunks → handleSSEEvent → inProgressMessage accumulates
+ *  SSE done   → inProgressMessage committed to messages[] (no network)
+ *  background → invalidateQueries (silent, doesn't affect UI)
  */
 
 import { useEffect, useRef, useCallback } from "react";
@@ -18,36 +23,33 @@ import { useWorkflowStore } from "@/store/workflow-store";
 import { messagesAPI } from "@/lib/api";
 import type { UserAction, Message, SSEEvent } from "@/types/workflow";
 
-// ─── Query key factory ───────────────────────────────────────────────────────
-
 export const workflowKeys = {
-  messages: (projectId: string, offset = 0) =>
-    ["messages", projectId, offset] as const,
+  messages: (projectId: string) => ["messages", projectId] as const,
 };
-
-// ─── Hook ────────────────────────────────────────────────────────────────────
 
 export function useWorkflow(projectId: string) {
   const queryClient = useQueryClient();
 
-  // ── Zustand — live SSE state ─────────────────────────────────────────────
   const {
+    messages,
     stage,
     active_plan,
-    streaming_text,
     active_role,
     is_streaming,
     error,
+    inProgressMessage,
+    hydrateMessages,
+    addOptimisticMessage,
+    confirmOptimisticMessage,
+    removeOptimisticMessage,
     handleSSEEvent,
     reset,
   } = useWorkflowStore();
 
-  // ── TanStack Query — persisted message history from DB ───────────────────
-  const {
-    data: historyData,
-    isLoading: isLoadingHistory,
-    isError: isHistoryError,
-  } = useQuery({
+  // ── Initial history load ─────────────────────────────────────────────────
+  // TanStack Query fetches once, hydrates Zustand, then steps back.
+  // staleTime: Infinity means it won't auto-refetch — Zustand owns live state.
+  const { isLoading: isLoadingHistory, isError: isHistoryError } = useQuery({
     queryKey: workflowKeys.messages(projectId),
     queryFn: async () => {
       const response = await messagesAPI.list(projectId, 0, 50);
@@ -55,19 +57,27 @@ export function useWorkflow(projectId: string) {
       return response.data!;
     },
     enabled: !!projectId,
-    staleTime: 30_000,           // fresh for 30s — SSE keeps us live anyway
-    refetchOnWindowFocus: false, // SSE handles live updates, no need to refetch
+    staleTime: Infinity,          // Never auto-refetch — SSE keeps us live
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,        // Only fetch fresh on first mount
+    // Feed data into Zustand as soon as it arrives
+    select: (data) => {
+      hydrateMessages(data.messages ?? []);
+      return data;
+    },
   });
 
-  // Restore stage from active_build when page loads mid-build
+  // ── Restore stage from active_build on page load mid-workflow ────────────
+  const historyData = queryClient.getQueryData<{ active_build?: { status: string } }>(
+    workflowKeys.messages(projectId)
+  );
   useEffect(() => {
     const activeBuild = historyData?.active_build;
     if (!activeBuild || stage !== "idle") return;
-
     const statusToStage: Record<string, string> = {
-      running:   "building",
-      planning:  "planning",
-      testing:   "testing",
+      running: "building",
+      planning: "planning",
+      testing: "testing",
       deploying: "deploying",
       waiting_env: "waiting_env",
     };
@@ -75,81 +85,72 @@ export function useWorkflow(projectId: string) {
     if (restored) useWorkflowStore.setState({ stage: restored as any });
   }, [historyData?.active_build, stage]);
 
-  // ── SSE connection (direct to FastAPI, bypasses Next.js proxy buffering) ──
+  // ── SSE connection ────────────────────────────────────────────────────────
   const eventSourceRef = useRef<EventSource | null>(null);
-  const retryRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSSEEventWithSideEffects = useCallback(
+    (sseEvent: SSEEvent) => {
+      handleSSEEvent(sseEvent);
+
+      // On "done": silently invalidate TanStack cache in background.
+      // This is for correctness if user navigates away and comes back —
+      // the cache will be fresh. It does NOT affect current UI rendering.
+      if (sseEvent.type === "done") {
+        queryClient.invalidateQueries({
+          queryKey: workflowKeys.messages(projectId),
+        });
+      }
+    },
+    [handleSSEEvent, queryClient, projectId]
+  );
 
   const connectSSE = useCallback(() => {
-    // Guard: don't connect if projectId is missing or invalid
     if (!projectId || projectId === "undefined") return;
 
-    // Close existing connection
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
 
-    // Connect DIRECTLY to FastAPI (bypasses Next.js rewrite proxy buffering)
-    // CORS is configured on FastAPI: allow_origins=["http://localhost:3000"], allow_credentials=True
-    // withCredentials:true sends authjs.session-token cookie cross-origin
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
     const url = `${API_BASE}/api/v1/projects/${projectId}/messages/stream`;
-    console.log("[SSE] Connecting directly to FastAPI:", url);
+    console.log("[SSE] Connecting:", url);
 
-    const eventSource = new EventSource(url, { withCredentials: true });
+    const es = new EventSource(url, { withCredentials: true });
 
-    eventSource.onopen = () => {
-      console.log("[SSE] Connection opened");
-    };
+    es.onopen = () => console.log("[SSE] Opened");
 
-    eventSource.onmessage = (event) => {
+    es.onmessage = (event) => {
       try {
-        console.log("[SSE] Event received:", event.data);
         const sseEvent: SSEEvent = JSON.parse(event.data);
-        handleSSEEvent(sseEvent);
-
-        // When stream ends, refresh persisted history via TanStack Query
-        if (sseEvent.type === "done") {
-          queryClient.invalidateQueries({
-            queryKey: workflowKeys.messages(projectId),
-          });
-        }
+        handleSSEEventWithSideEffects(sseEvent);
       } catch (err) {
-        console.error("[SSE] Failed to parse event:", err);
+        console.error("[SSE] Parse error:", err);
       }
     };
 
-    eventSource.onerror = (err) => {
-      console.error("[SSE] Connection error:", err);
-      eventSource.close();
-
-      // Don't retry if we're in a stable state (done/idle) — stream closed normally
-      const currentStage = useWorkflowStore.getState().stage;
-      if (currentStage !== "idle" && currentStage !== "complete" && currentStage !== "error") {
-        // Retry connection after 3s only if workflow is still active
+    es.onerror = () => {
+      es.close();
+      const s = useWorkflowStore.getState().stage;
+      if (s !== "idle" && s !== "complete" && s !== "error") {
         retryRef.current = setTimeout(connectSSE, 3000);
       }
     };
 
-    eventSourceRef.current = eventSource;
-  }, [projectId, handleSSEEvent, queryClient]);
+    eventSourceRef.current = es;
+  }, [projectId, handleSSEEventWithSideEffects]);
 
-  // Connect on mount, clean up on unmount / project change
   useEffect(() => {
     connectSSE();
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
+      eventSourceRef.current?.close();
+      eventSourceRef.current = null;
       if (retryRef.current) clearTimeout(retryRef.current);
     };
   }, [connectSSE]);
 
-  // Reset live state when switching projects
   useEffect(() => { reset(); }, [projectId, reset]);
 
-  // ── Send action mutation ──────────────────────────────────────────────────
+  // ── Send action ───────────────────────────────────────────────────────────
   const sendMutation = useMutation({
     mutationFn: async (action: UserAction) => {
       const response = await messagesAPI.sendAction(projectId, action);
@@ -158,61 +159,30 @@ export function useWorkflow(projectId: string) {
     },
 
     onMutate: async (action) => {
-      // Show user message instantly (optimistic) with a temporary ID
       if ("content" in action && action.content) {
         const tempId = `temp-${Date.now()}`;
         const optimistic: Message = {
-          id:           tempId,
-          role:         "user",
+          id: tempId,
+          role: "user",
           message_type: "user_prompt",
-          content:      [{ type: "text", content: action.content }],
-          created_at:   new Date().toISOString(),
+          content: [{ type: "text", content: action.content }],
+          created_at: new Date().toISOString(),
         };
-        
-        // Optimistically update TanStack Query cache (NOT Zustand)
-        queryClient.setQueryData(
-          workflowKeys.messages(projectId),
-          (old: any) => ({
-            ...old,
-            messages: [...(old?.messages ?? []), optimistic],
-          })
-        );
-        
+        addOptimisticMessage(optimistic);
         return { tempId };
       }
     },
 
-    onSuccess: (response, action, context) => {
-      // Replace temp message with real DB message ID
+    onSuccess: (response, _action, context) => {
       if (context?.tempId) {
-        queryClient.setQueryData(
-          workflowKeys.messages(projectId),
-          (old: any) => ({
-            ...old,
-            messages: (old?.messages ?? []).map((m: Message) =>
-              m.id === context.tempId
-                ? { ...m, id: response.user_message_id }
-                : m
-            ),
-          })
-        );
+        confirmOptimisticMessage(context.tempId, response.user_message_id);
       }
     },
 
-    onError: (err, action, context) => {
-      // Remove optimistic message on error
+    onError: (err, _action, context) => {
       if (context?.tempId) {
-        queryClient.setQueryData(
-          workflowKeys.messages(projectId),
-          (old: any) => ({
-            ...old,
-            messages: (old?.messages ?? []).filter(
-              (m: Message) => m.id !== context.tempId
-            ),
-          })
-        );
+        removeOptimisticMessage(context.tempId);
       }
-      
       useWorkflowStore.setState({
         stage: "error",
         error: err instanceof Error ? err.message : "Failed to send",
@@ -220,25 +190,18 @@ export function useWorkflow(projectId: string) {
     },
   });
 
-  // ── Merge persisted history + live streaming ──────────────────────────────
-  // TanStack Query = source of truth for all saved messages
-  // Zustand = ONLY for in-flight streaming text display
-  // 
-  // Read directly from cache to get optimistic updates instantly
-  const cachedData = queryClient.getQueryData<typeof historyData>(
-    workflowKeys.messages(projectId)
-  );
-  const messages: Message[] = cachedData?.messages ?? historyData?.messages ?? [];
+  // ── Derive streaming text from inProgressMessage ──────────────────────────
+  const streaming_text = inProgressMessage?.text ?? "";
 
-  // ── Public API ────────────────────────────────────────────────────────────
   return {
-    // Data
+    // Data — all from Zustand, never from TanStack Query directly
     messages,
     stage,
     active_plan,
     streaming_text,
     active_role,
     is_streaming,
+    inProgressMessage,
     error,
 
     // Loading flags
@@ -246,7 +209,7 @@ export function useWorkflow(projectId: string) {
     isHistoryError,
     isSending: sendMutation.isPending,
 
-    // The ONLY way UI sends anything to the backend
+    // Actions
     sendAction: (action: UserAction) => sendMutation.mutate(action),
   };
 }

@@ -1,123 +1,222 @@
 /**
  * store/workflow-store.ts
  *
- * Zustand store — owns ONLY the live SSE-driven DISPLAY state.
- * NOT for message history — that's TanStack Query (single source of truth).
+ * REDESIGN: Zustand is the SINGLE source of truth for ALL messages.
  *
- * What lives here:
- *  - stage          → current workflow stage (driven by SSE stage_change events)
- *  - active_plan     → plan artifact received from conductor
- *  - streaming_text  → text chunks being streamed right now (ephemeral display)
- *  - active_role     → which agent is currently active
- *  - error          → any workflow error
+ * Flow:
+ *  1. Page load → TanStack Query fetches history → calls hydrateMessages()
+ *  2. SSE events mutate Zustand directly — no backend round-trips ever
+ *  3. "done" event → commits the inProgressMessage into messages[] locally
+ *  4. TanStack Query invalidates silently in background (cache only, never blocks UI)
  *
- * What does NOT live here:
- *  - messages       → TanStack Query owns this (refetched from DB after SSE done)
+ * Why this is better:
+ *  - Zero refetch latency — message appears the instant SSE "done" fires
+ *  - No flash of empty content between streaming end and DB refetch
+ *  - Message order is always correct (optimistic user msg → streaming → committed)
+ *  - SSE is the source of truth for live state; DB is just persistence
  */
 
 import { create } from "zustand";
 import type { WorkflowStage, Plan, Message, SSEEvent } from "@/types/workflow";
 
-// ─── Shape ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+/** The message currently being assembled from SSE chunks — not yet in messages[] */
+interface InProgressMessage {
+  role: string;
+  text: string;
+  artifact: {
+    artifact_type: string;
+    title: string;
+    content: unknown;
+  } | null;
+}
 
 interface WorkflowStore {
-  // Live state
+  // ── Rendered messages (history + committed streamed) ──
+  messages: Message[];
+
+  // ── Workflow stage ──
   stage: WorkflowStage;
   active_plan: Plan | null;
-  streaming_text: string;        // Ephemeral — clears on agent_done
   active_role: string | null;
   is_streaming: boolean;
   error: string | null;
 
-  // Actions — called by useWorkflow hook only, not directly by UI
+  // ── The message being built right now from SSE chunks ──
+  // Stays null between turns. Shown as live preview. Committed on "done".
+  inProgressMessage: InProgressMessage | null;
+
+  // ── Actions ──
+  hydrateMessages: (messages: Message[]) => void;
+  addOptimisticMessage: (message: Message) => void;
+  confirmOptimisticMessage: (tempId: string, realId: string) => void;
+  removeOptimisticMessage: (tempId: string) => void;
   handleSSEEvent: (event: SSEEvent) => void;
   reset: () => void;
 }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
 
-const INITIAL: Omit<WorkflowStore, "handleSSEEvent" | "reset"> = {
+const INITIAL: Omit<
+  WorkflowStore,
+  | "hydrateMessages"
+  | "addOptimisticMessage"
+  | "confirmOptimisticMessage"
+  | "removeOptimisticMessage"
+  | "handleSSEEvent"
+  | "reset"
+> = {
+  messages: [],
   stage: "idle",
   active_plan: null,
-  streaming_text: "",
   active_role: null,
   is_streaming: false,
   error: null,
+  inProgressMessage: null,
 };
+
+// ─── Helper: commit inProgressMessage → Message ───────────────────────────────
+
+function commitInProgress(ip: InProgressMessage): Message | null {
+  const content: Message["content"] = [];
+
+  // Artifact goes first (like a plan card above the text)
+  if (ip.artifact) {
+    content.push({
+      type: "artifact",
+      artifact_id: `artifact-${Date.now()}`,
+      artifact_data: ip.artifact,
+    });
+  }
+
+  if (ip.text.trim()) {
+    content.push({ type: "text", content: ip.text.trim() });
+  }
+
+  if (content.length === 0) return null;
+
+  return {
+    id: `streamed-${Date.now()}`,
+    role: ip.role as Message["role"],
+    message_type: "assistant_response",
+    content,
+    created_at: new Date().toISOString(),
+  };
+}
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   ...INITIAL,
 
-  // ── The ONLY place SSE events mutate state ───────────────────────────────
+  // ── Called once by TanStack Query after history loads ──────────────────────
+  hydrateMessages: (messages: Message[]) => {
+    // Guard: don't clobber messages if SSE already added some (e.g. slow network)
+    if (get().messages.length === 0) {
+      set({ messages });
+    }
+  },
+
+  // ── Optimistic user message (shown before server confirms) ─────────────────
+  addOptimisticMessage: (message: Message) => {
+    set((s) => ({ messages: [...s.messages, message] }));
+  },
+
+  confirmOptimisticMessage: (tempId: string, realId: string) => {
+    set((s) => ({
+      messages: s.messages.map((m) =>
+        m.id === tempId ? { ...m, id: realId } : m
+      ),
+    }));
+  },
+
+  removeOptimisticMessage: (tempId: string) => {
+    set((s) => ({
+      messages: s.messages.filter((m) => m.id !== tempId),
+    }));
+  },
+
+  // ── SSE event handler — the core of the live flow ─────────────────────────
   handleSSEEvent: (event: SSEEvent) => {
-    console.log("[WorkflowStore] Handling SSE event:", event);
-    
+    console.log("[WorkflowStore] SSE:", event.type);
+
     switch (event.type) {
 
+      // Stage transitions — just update stage label
       case "stage_change":
-        console.log("[WorkflowStore] Stage change:", event.stage);
-        set({ 
-          stage: event.stage, 
-          error: null,
-          streaming_text: "",      // Clear any orphaned streaming text
-          is_streaming: false,
-        });
+        set({ stage: event.stage, error: null });
         break;
 
+      // Agent starting — open a fresh inProgressMessage slot for this agent
       case "agent_start":
-        console.log("[WorkflowStore] Agent start:", event.role);
-        set({ active_role: event.role });
-        break;
-
-      case "agent_done":
-        console.log("[WorkflowStore] Agent done:", event.role);
-        // Agent finished — clear streaming display
-        set({ 
-          streaming_text: "",
+        set({
+          active_role: event.role,
           is_streaming: false,
-          active_role: null,
+          inProgressMessage: { role: event.role, text: "", artifact: null },
         });
         break;
 
+      // Text arriving — append to inProgressMessage.text
       case "text_chunk":
-        const newText = get().streaming_text + event.chunk;
-        console.log("[WorkflowStore] Text chunk received. New length:", newText.length);
         set((s) => ({
           is_streaming: true,
-          streaming_text: s.streaming_text + event.chunk,
           active_role: event.role,
+          inProgressMessage: s.inProgressMessage
+            ? { ...s.inProgressMessage, text: s.inProgressMessage.text + event.chunk }
+            : { role: event.role, text: event.chunk, artifact: null },
         }));
         break;
 
+      // Artifact (e.g. plan) — attach to inProgressMessage
       case "artifact": {
-        console.log("[WorkflowStore] Artifact received:", event.artifact_type);
-        const updates: Partial<WorkflowStore> = {};
+        const artifactData = {
+          artifact_type: event.artifact_type,
+          title: event.title,
+          content: event.content,
+        };
+        const planUpdate =
+          event.artifact_type === "plan"
+            ? { active_plan: event.content as Plan }
+            : {};
 
-        // If it's a plan artifact → store it (but don't change stage yet - let stage_change handle it)
-        if (event.artifact_type === "plan") {
-          updates.active_plan = event.content as Plan;
-        }
-
-        // Don't clear streaming state here - let agent_done or stage_change handle it
-        set(updates as any);
+        set((s) => ({
+          ...planUpdate,
+          inProgressMessage: s.inProgressMessage
+            ? { ...s.inProgressMessage, artifact: artifactData }
+            : { role: "conductor", text: "", artifact: artifactData },
+        }));
         break;
       }
 
+      // Agent done — stop the spinning cursor, but KEEP inProgressMessage visible.
+      // The text stays on screen until "done" commits it — no flash.
+      case "agent_done":
+        set({ is_streaming: false, active_role: null });
+        break;
+
+      // Stream done — commit inProgressMessage into messages[] and clear it.
+      // This is the ONLY write to messages[] from SSE. No network call needed.
       case "done":
-        console.log("[WorkflowStore] Stream done");
-        // Stream finished — backend has saved all messages to DB
-        // TanStack Query will refetch and get the persisted versions
-        set({ 
-          streaming_text: "",
-          is_streaming: false,
+        set((s) => {
+          if (!s.inProgressMessage) return {};
+
+          const committed = commitInProgress(s.inProgressMessage);
+          return {
+            messages: committed ? [...s.messages, committed] : s.messages,
+            inProgressMessage: null,
+            is_streaming: false,
+          };
         });
         break;
 
       case "error":
-        console.log("[WorkflowStore] Error:", event.message);
-        set({ stage: "error", error: event.message, is_streaming: false });
+        set({
+          stage: "error",
+          error: event.message,
+          is_streaming: false,
+          inProgressMessage: null,
+        });
         break;
     }
   },
