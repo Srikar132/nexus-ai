@@ -51,6 +51,19 @@ class DockerManager:
     
     def spin_up(self, port: int = 8080) -> str:
         """Spin up container with a default port mapping (can be reconfigured later)"""
+        # Clean up any stale containers with the same name (Created/Exited state)
+        try:
+            old = client.containers.get(self.container_name)
+            old.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+
+        # Ensure the Docker network exists before starting the container
+        try:
+            client.networks.get(settings.DOCKER_NETWORK)
+        except docker.errors.NotFound:
+            client.networks.create(settings.DOCKER_NETWORK, driver="bridge")
+
         self.container = client.containers.run(
             image       = settings.DOCKER_BASE_IMAGE,
             name        = self.container_name,
@@ -67,15 +80,24 @@ class DockerManager:
             cpu_quota   = 50000,
             cpu_period  = 100000,
         )
-        
+
+        # Wait for container to be running
+        for _ in range(10):
+            self.container.reload()
+            if self.container.status == "running":
+                break
+            time.sleep(0.5)
+
         # Get the mapped host port
-        self.container.reload()
         bindings = self.container.ports.get(f"{port}/tcp")
         if bindings:
             self.app_port = bindings[0]["HostPort"]
-        
-        self.exec("mkdir -p /workspace")
-        self.exec("apt-get update -qq && apt-get install -y -qq git curl")
+
+        # Create /workspace using root workdir (it doesn't exist yet)
+        self.exec("mkdir -p /workspace", workdir="/")
+        # Pre-install curl so the agent doesn't waste a tool call installing it
+        self.exec("apt-get install -y -qq curl 2>/dev/null || true", workdir="/")
+        return self.container.id
         return self.container.id
 
     def configure_port(self, run_config: RunConfig):
@@ -108,8 +130,7 @@ class DockerManager:
             cpu_quota   = 50000,
             cpu_period  = 100000,
         )
-        self.exec("mkdir -p /workspace")
-        self.exec("apt-get update -qq && apt-get install -y -qq git curl")
+        self.exec("mkdir -p /workspace", workdir="/")
 
         # Restore files
         for path, content in existing_files.items():
@@ -151,10 +172,10 @@ class DockerManager:
         _, logs = self.exec("cat /workspace/app.log 2>/dev/null || echo 'No logs'")
         return logs
 
-    def exec(self, command: str) -> tuple[int, str]:
+    def exec(self, command: str, workdir: str = "/workspace") -> tuple[int, str]:
         if not self.container:
             raise RuntimeError("Container not started")
-        result = self.container.exec_run(["/bin/sh", "-c", command], workdir="/workspace")
+        result = self.container.exec_run(["/bin/sh", "-c", command], workdir=workdir)
         return result.exit_code, (result.output or b"").decode("utf-8")
 
     def write_file(self, path: str, content: str):

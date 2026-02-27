@@ -38,18 +38,20 @@ export function useWorkflow(projectId: string) {
     is_streaming,
     error,
     inProgressMessage,
+    isThinking,
+    thinkingStatus,
     hydrateMessages,
     addOptimisticMessage,
     confirmOptimisticMessage,
     removeOptimisticMessage,
     handleSSEEvent,
+    setThinking,
     reset,
   } = useWorkflowStore();
 
   // ── Initial history load ─────────────────────────────────────────────────
   // TanStack Query fetches once, hydrates Zustand, then steps back.
-  // staleTime: Infinity means it won't auto-refetch — Zustand owns live state.
-  const { isLoading: isLoadingHistory, isError: isHistoryError } = useQuery({
+  const { data: historyQueryData, isLoading: isLoadingHistory, isError: isHistoryError } = useQuery({
     queryKey: workflowKeys.messages(projectId),
     queryFn: async () => {
       const response = await messagesAPI.list(projectId, 0, 50);
@@ -57,22 +59,26 @@ export function useWorkflow(projectId: string) {
       return response.data!;
     },
     enabled: !!projectId,
-    staleTime: Infinity,          // Never auto-refetch — SSE keeps us live
+    staleTime: 5 * 60 * 1000,    // 5 min — allows refetch on page reload but not on every re-render
     refetchOnWindowFocus: false,
-    refetchOnMount: false,        // Only fetch fresh on first mount
-    // Feed data into Zustand as soon as it arrives
-    select: (data) => {
-      hydrateMessages(data.messages ?? []);
-      return data;
-    },
+    refetchOnMount: "always",     // Always refetch on mount — ensures DB messages show after refresh
   });
 
-  // ── Restore stage from active_build on page load mid-workflow ────────────
-  const historyData = queryClient.getQueryData<{ active_build?: { status: string } }>(
-    workflowKeys.messages(projectId)
-  );
+  // Hydrate Zustand from query data — runs only when the fetched data actually changes.
+  // This is intentionally in a useEffect (not select) to avoid side-effects during render.
+  const hydratedRef = useRef<string | null>(null);
   useEffect(() => {
-    const activeBuild = historyData?.active_build;
+    if (!historyQueryData?.messages) return;
+    // Build a cheap fingerprint so we don't re-hydrate with identical data
+    const fingerprint = historyQueryData.messages.map((m: Message) => m.id).join(",");
+    if (fingerprint === hydratedRef.current) return;
+    hydratedRef.current = fingerprint;
+    hydrateMessages(historyQueryData.messages);
+  }, [historyQueryData, hydrateMessages]);
+
+  // ── Restore stage from active_build on page load mid-workflow ────────────
+  useEffect(() => {
+    const activeBuild = (historyQueryData as any)?.active_build;
     if (!activeBuild || stage !== "idle") return;
     const statusToStage: Record<string, string> = {
       running: "building",
@@ -83,7 +89,7 @@ export function useWorkflow(projectId: string) {
     };
     const restored = statusToStage[activeBuild.status];
     if (restored) useWorkflowStore.setState({ stage: restored as any });
-  }, [historyData?.active_build, stage]);
+  }, [historyQueryData, stage]);
 
   // ── SSE connection ────────────────────────────────────────────────────────
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -173,7 +179,10 @@ export function useWorkflow(projectId: string) {
     },
 
     onMutate: async (action) => {
-      if ("content" in action && action.content) {
+      // Show thinking indicator immediately — before server even responds
+      setThinking("Analyzing your request...");
+
+      if ("content" in action && action.content) { 
         const tempId = `temp-${Date.now()}`;
         const optimistic: Message = {
           id: tempId,
@@ -197,6 +206,7 @@ export function useWorkflow(projectId: string) {
       if (context?.tempId) {
         removeOptimisticMessage(context.tempId);
       }
+      setThinking(null);
       useWorkflowStore.setState({
         stage: "error",
         error: err instanceof Error ? err.message : "Failed to send",
@@ -216,6 +226,8 @@ export function useWorkflow(projectId: string) {
     active_role,
     is_streaming,
     inProgressMessage,
+    isThinking,
+    thinkingStatus,
     error,
 
     // Loading flags

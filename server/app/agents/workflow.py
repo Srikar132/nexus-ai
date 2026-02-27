@@ -273,6 +273,13 @@ def _stream_conductor(
     # Convert to unified format
     unified_messages = [{"role": "system", "content": system}] + messages
 
+    # Publish thinking status right before LLM call (biggest latency source)
+    publish(project_id, {
+        "type":   "thinking",
+        "status": "Generating response...",
+        "role":   "conductor",
+    })
+
     # Stream from unified LLM
     for chunk in llm.chat_stream(unified_messages, max_tokens=2000):
         if not chunk.done:
@@ -685,7 +692,7 @@ def artificer_node(state: GraphState) -> GraphState:
         docker.exec("pkill -f 'uvicorn\\|node\\|python.*app\\|java' 2>/dev/null; sleep 1; true")
 
     # ── Prepare tools for the agent ─────────────────────
-    tools = get_docker_tools(docker)
+    tools = get_docker_tools(docker, project_id=project_id)
 
     # ── Build system prompt based on mode ─────────────────────────
     if not is_fix_mode:
@@ -728,7 +735,13 @@ STARTING THE APP:
 - Kill any existing processes first: exec_command("pkill -f 'uvicorn|node|python.*app|java' 2>/dev/null || true")
 - Use nohup to start in background: exec_command("nohup <start_command> > /workspace/app.log 2>&1 &")
 - Wait a few seconds then test: exec_command("sleep 3 && curl -f http://localhost:<port>/health")
-- Report success with the URL: "✅ App running at http://localhost:<port>"
+- When the health check returns HTTP 200, output EXACTLY this line and STOP immediately:
+  ✅ App running at http://localhost:<port>
+
+TERMINATION RULE — CRITICAL:
+Once you see the curl health check succeed (exit code 0 or HTTP 200 in output), your job is DONE.
+Output "✅ App running at http://localhost:<port>" and DO NOT call any more tools.
+Do NOT echo, do NOT confirm, do NOT summarise — just stop after that one final message.
 
 IMPORTANT: You decide the build and run commands based on best practices for {language}/{framework}.
 The system will automatically discover your choices and use them for deployment.
@@ -1031,7 +1044,7 @@ def deployer_node(state: GraphState) -> GraphState:
         
         # Get deployment analysis tools (read-only)
         from app.agents.tools.docker_tools import get_docker_tools
-        tools = get_docker_tools(docker)
+        tools = get_docker_tools(docker, project_id=project_id)
         
         publish(project_id, {
             "type":  "text_chunk", 

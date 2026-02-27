@@ -15,12 +15,17 @@ Design decision on start_app:
 import os
 from langchain_core.tools import tool
 from app.core.docker_manager import DockerManager
+from app.core.redis import publish as redis_publish
 
 
-def get_docker_tools(docker: DockerManager) -> list:
+def get_docker_tools(docker: DockerManager, project_id: str = None) -> list:
     """
     Returns tool functions bound to this build's DockerManager instance.
     Call once per build, pass returned list to run_react_agent().
+    
+    If project_id is provided, write_file and delete_file will publish
+    SSE events (file_created / file_deleted) so the frontend code panel
+    can display the file tree and code in real-time.
     """
 
     @tool
@@ -58,6 +63,17 @@ def get_docker_tools(docker: DockerManager) -> list:
             docker.write_file(path, content)
             lines = len(content.splitlines())
             size  = len(content.encode("utf-8"))
+            
+            # Publish file_created event so frontend code panel updates in real-time
+            if project_id:
+                redis_publish(project_id, {
+                    "type":    "file_created",
+                    "path":    path,
+                    "content": content,
+                    "lines":   lines,
+                    "size":    size,
+                })
+            
             return f"✅ Written: {path} ({lines} lines, {size} bytes)"
         except Exception as e:
             return f"❌ Failed to write {path}: {e}"
@@ -143,6 +159,12 @@ def get_docker_tools(docker: DockerManager) -> list:
         try:
             exit_code, output = docker.exec(f"rm -f /workspace/{path}")
             if exit_code == 0:
+                # Publish file_deleted event so frontend code panel updates
+                if project_id:
+                    redis_publish(project_id, {
+                        "type": "file_deleted",
+                        "path": path,
+                    })
                 return f"✅ Deleted: {path}"
             return f"❌ Delete failed: {output}"
         except Exception as e:

@@ -18,6 +18,8 @@
 
 import { create } from "zustand";
 import type { WorkflowStage, Plan, Message, SSEEvent } from "@/types/workflow";
+import { useCodeStore } from "@/store/code-store";
+import { useRightSidebar } from "@/store/right-sidebar-store";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,10 @@ interface WorkflowStore {
   is_streaming: boolean;
   error: string | null;
 
+  // ── Thinking indicator (shown between send and first chunk) ──
+  isThinking: boolean;
+  thinkingStatus: string | null;
+
   // ── The message being built right now from SSE chunks ──
   // Stays null between turns. Shown as live preview. Committed on "done".
   inProgressMessage: InProgressMessage | null;
@@ -53,6 +59,7 @@ interface WorkflowStore {
   confirmOptimisticMessage: (tempId: string, realId: string) => void;
   removeOptimisticMessage: (tempId: string) => void;
   handleSSEEvent: (event: SSEEvent) => void;
+  setThinking: (status: string | null) => void;
   reset: () => void;
 }
 
@@ -65,6 +72,7 @@ const INITIAL: Omit<
   | "confirmOptimisticMessage"
   | "removeOptimisticMessage"
   | "handleSSEEvent"
+  | "setThinking"
   | "reset"
 > = {
   messages: [],
@@ -73,6 +81,8 @@ const INITIAL: Omit<
   active_role: null,
   is_streaming: false,
   error: null,
+  isThinking: false,
+  thinkingStatus: null,
   inProgressMessage: null,
 };
 
@@ -146,13 +156,35 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       // Stage transitions — just update stage label
       case "stage_change":
         set({ stage: event.stage, error: null });
+        // Auto-switch right sidebar to code panel when building/fixing starts
+        if (event.stage === "building" || event.stage === "fixing") {
+          useCodeStore.getState().setActive(true);
+          useCodeStore.getState().reset();
+          useRightSidebar.getState().showCode();
+        }
+        // Deactivate code panel when building is done
+        if (event.stage === "testing" || event.stage === "complete" || event.stage === "error") {
+          useCodeStore.getState().setActive(false);
+        }
+        break;
+
+      // Thinking indicator — shown immediately when Celery task starts
+      case "thinking":
+        set({
+          isThinking: true,
+          thinkingStatus: event.status,
+          active_role: event.role || null,
+        });
         break;
 
       // Agent starting — open a fresh inProgressMessage slot for this agent
+      // Also clears thinking since actual work is starting
       case "agent_start":
         set({
           active_role: event.role,
           is_streaming: false,
+          isThinking: false,
+          thinkingStatus: null,
           inProgressMessage: { role: event.role, text: "", artifact: null },
         });
         break;
@@ -161,6 +193,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       case "text_chunk":
         set((s) => ({
           is_streaming: true,
+          isThinking: false,
+          thinkingStatus: null,
           active_role: event.role,
           inProgressMessage: s.inProgressMessage
             ? { ...s.inProgressMessage, text: s.inProgressMessage.text + event.chunk }
@@ -195,17 +229,33 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         set({ is_streaming: false, active_role: null });
         break;
 
+      // File created by coding agent — forward to code store
+      case "file_created": {
+        const codeStore = useCodeStore.getState();
+        codeStore.addFile(event.path, event.content, event.lines, event.size);
+        break;
+      }
+
+      // File deleted by coding agent — forward to code store
+      case "file_deleted": {
+        const codeStoreRef = useCodeStore.getState();
+        codeStoreRef.deleteFile(event.path);
+        break;
+      }
+
       // Stream done — commit inProgressMessage into messages[] and clear it.
       // This is the ONLY write to messages[] from SSE. No network call needed.
       case "done":
         set((s) => {
-          if (!s.inProgressMessage) return {};
+          if (!s.inProgressMessage) return { isThinking: false, thinkingStatus: null };
 
           const committed = commitInProgress(s.inProgressMessage);
           return {
             messages: committed ? [...s.messages, committed] : s.messages,
             inProgressMessage: null,
             is_streaming: false,
+            isThinking: false,
+            thinkingStatus: null,
           };
         });
         break;
@@ -215,9 +265,19 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           stage: "error",
           error: event.message,
           is_streaming: false,
+          isThinking: false,
+          thinkingStatus: null,
           inProgressMessage: null,
         });
         break;
+    }
+  },
+
+  setThinking: (status: string | null) => {
+    if (status) {
+      set({ isThinking: true, thinkingStatus: status });
+    } else {
+      set({ isThinking: false, thinkingStatus: null });
     }
   },
 
