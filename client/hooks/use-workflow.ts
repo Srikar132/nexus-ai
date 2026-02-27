@@ -72,17 +72,19 @@ export function useWorkflow(projectId: string) {
   const addOptimisticMessage     = useWorkflowStore((s) => s.addOptimisticMessage);
   const confirmOptimisticMessage = useWorkflowStore((s) => s.confirmOptimisticMessage);
   const removeOptimisticMessage  = useWorkflowStore((s) => s.removeOptimisticMessage);
+  const setWorkflowPending       = useWorkflowStore((s) => s.setWorkflowPending);
   const reset                    = useWorkflowStore((s) => s.reset);
 
   // ── Rendered state (optimized selectors for performance) ───────────────────
-  const messages          = useWorkflowStore((s) => s.messages);
-  const stage             = useWorkflowStore((s) => s.stage);
-  const active_role       = useWorkflowStore((s) => s.active_role);
-  const is_streaming      = useWorkflowStore((s) => s.is_streaming);
-  const isThinking        = useWorkflowStore((s) => s.isThinking);
-  const thinkingStatus    = useWorkflowStore((s) => s.thinkingStatus);
-  const stepFeed          = useWorkflowStore((s) => s.stepFeed);
-  const error             = useWorkflowStore((s) => s.error);
+  const messages             = useWorkflowStore((s) => s.messages);
+  const stage                = useWorkflowStore((s) => s.stage);
+  const active_role          = useWorkflowStore((s) => s.active_role);
+  const is_streaming         = useWorkflowStore((s) => s.is_streaming);
+  const isThinking           = useWorkflowStore((s) => s.isThinking);
+  const thinkingStatus       = useWorkflowStore((s) => s.thinkingStatus);
+  const stepFeed             = useWorkflowStore((s) => s.stepFeed);
+  const error                = useWorkflowStore((s) => s.error);
+  const isPendingWorkflowStart = useWorkflowStore((s) => s.isPendingWorkflowStart);
   
   // CRITICAL: Separate selector for streaming text to maximize performance
   const inProgressMessage = useWorkflowStore((s) => s.inProgressMessage);
@@ -275,10 +277,13 @@ export function useWorkflow(projectId: string) {
       if (context?.tempId) {
         confirmOptimisticMessage(context.tempId, response.user_message_id);
       }
+      // Set pending state after successful send to show interim loading
+      setWorkflowPending(true);
     },
 
     onError: (err, _action, context) => {
       if (context?.tempId) removeOptimisticMessage(context.tempId);
+      setWorkflowPending(false); // Clear pending state on error
       useWorkflowStore.setState({
         stage: "error",
         error: err instanceof Error ? err.message : "Failed to send message",
@@ -299,6 +304,7 @@ export function useWorkflow(projectId: string) {
     isLoadingHistory,
     isHistoryError,
     isSending: sendMutation.isPending,
+    isPendingWorkflowStart,
     sendAction: (action: UserAction) => {
       ensureSSEConnected();
       sendMutation.mutate(action);

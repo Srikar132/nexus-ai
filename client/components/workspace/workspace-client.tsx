@@ -10,6 +10,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resi
 import WorkspaceChat from "./workspace-chat";
 import { useWorkflow } from "@/hooks/use-workflow";
 import RightSidebar from "./right-sidebar";
+import { useRightSidebar } from "@/store/right-sidebar-store";
 
 interface WorkspaceClientProps {
   initialProject: Project;
@@ -29,16 +30,41 @@ const WorkspaceClient = ({ initialProject }: WorkspaceClientProps) => {
     isLoadingHistory,
     isHistoryError,
     isSending,
+    isPendingWorkflowStart,
     sendAction,
   } = useWorkflow(initialProject.id);
+
+  const {
+    showCode,
+    showSettings,
+    setIdle,
+    hide
+  } = useRightSidebar();
+
+  const { currentState, isVisible } = useRightSidebar();
+
+  const handleTabChange = (tab: string) => {
+    switch (tab) {
+      case "code":
+        showCode();
+        break;
+      case "settings":
+        showSettings();
+        break;
+      case "idle":
+      default:
+        setIdle();
+        break;
+    }
+  };
 
   return (
     <>
       <WorkspaceHeader
         projectName={initialProject.name}
         isBuilding={["building", "thinking", "testing", "fixing"].includes(stage)}
-        activeTab="code"
-        onTabChange={() => {}}
+        activeTab={currentState}
+        onTabChange={handleTabChange}
         onDeploy={() => console.log("Deploy")}
         onShare={() => console.log("Share")}
       />
@@ -60,6 +86,7 @@ const WorkspaceClient = ({ initialProject }: WorkspaceClientProps) => {
               isLoadingHistory={isLoadingHistory}
               isHistoryError={isHistoryError}
               isSending={isSending}
+              isPendingWorkflowStart={isPendingWorkflowStart}
               sendAction={sendAction}
             />
           </ResizablePanel>

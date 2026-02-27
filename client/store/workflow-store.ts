@@ -52,6 +52,9 @@ interface WorkflowStore {
   is_streaming: boolean;
   error:        string | null;
 
+  // ── Interim loading state (between message sent and workflow start)
+  isPendingWorkflowStart: boolean;
+
   // ── Thinking indicator (single pulsing status bar — replaces itself)
   isThinking:     boolean;
   thinkingStatus: string | null;
@@ -67,6 +70,7 @@ interface WorkflowStore {
   addOptimisticMessage:     (message: Message) => void;
   confirmOptimisticMessage: (tempId: string, realId: string) => void;
   removeOptimisticMessage:  (tempId: string) => void;
+  setWorkflowPending:       (pending: boolean) => void;
   handleSSEEvent:           (event: SSEEvent) => void;
   reset:                    () => void;
 }
@@ -74,15 +78,16 @@ interface WorkflowStore {
 // ─── Initial state ────────────────────────────────────────────────────────────
 
 const INITIAL_STATE = {
-  messages:          [] as Message[],
-  stage:             "idle" as WorkflowStage,
-  active_role:       null as string | null,
-  is_streaming:      false,
-  error:             null as string | null,
-  isThinking:        false,
-  thinkingStatus:    null as string | null,
-  stepFeed:          [] as StepFeedItem[],
-  inProgressMessage: null as InProgressMessage | null,
+  messages:              [] as Message[],
+  stage:                 "idle" as WorkflowStage,
+  active_role:           null as string | null,
+  is_streaming:          false,
+  error:                 null as string | null,
+  isPendingWorkflowStart: false,
+  isThinking:            false,
+  thinkingStatus:        null as string | null,
+  stepFeed:              [] as StepFeedItem[],
+  inProgressMessage:     null as InProgressMessage | null,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -145,6 +150,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set((s) => ({ messages: s.messages.filter((m) => m.id !== tempId) }));
   },
 
+  setWorkflowPending: (pending: boolean) => {
+    set({ isPendingWorkflowStart: pending });
+  },
+
   /**
    * STABLE function — reads state via get(), never closes over stale state.
    * Store in a useRef in the hook. Reference never changes.
@@ -162,6 +171,12 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
     if (process.env.NODE_ENV === "development") {
       console.log("[WorkflowStore] SSE:", event.type, event);
+    }
+
+    // Clear pending state on any SSE event (workflow has started)
+    const currentState = get();
+    if (currentState.isPendingWorkflowStart) {
+      set({ isPendingWorkflowStart: false });
     }
 
     switch (event.type) {
