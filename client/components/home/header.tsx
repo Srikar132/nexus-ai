@@ -1,8 +1,8 @@
 import { auth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import {  Bell } from "lucide-react";
 import Link from "next/link";
+import { ThemeToggleButton } from "@/components/home/theme-toggle";
 
 export default async function Header() {
   const session = await auth();
@@ -21,11 +21,8 @@ export default async function Header() {
             <Link href="/docs">Docs</Link>
           </Button>
 
-          {/* Notifications */}
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-5 w-5" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />
-          </Button>
+          {/* Theme toggle */}
+          <ThemeToggleButton />
 
           {/* User Profile */}
           {session?.user && (

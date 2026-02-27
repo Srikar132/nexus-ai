@@ -194,13 +194,13 @@ export function PreviewSidebar({
         <TooltipProvider>
             <div
                 className={cn(
-                    "flex flex-col h-full bg-[#131314] border-l border-border overflow-hidden",
+                    "flex flex-col h-full bg-background border-l border-border overflow-hidden",
                     isFullscreen && "fixed inset-0 z-50",
                     className
                 )}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between h-10 px-3 border-b border-border/50 bg-[#1e1e21]">
+                <div className="flex items-center justify-between h-10 px-3 border-b border-border/50 bg-card">
                     <div className="flex items-center gap-2">
                         <Code2 className="h-4 w-4 text-primary" />
                         <span className="text-sm font-medium">Code Editor</span>
@@ -313,7 +313,7 @@ export function PreviewSidebar({
                     </AnimatePresence>
 
                     {/* Editor area */}
-                    <div className="flex-1 flex flex-col min-w-0 bg-[#131314]">
+                    <div className="flex-1 flex flex-col min-w-0 bg-background">
                         {/* Editor tabs */}
                         <EditorTabs
                             tabs={openTabs}
@@ -341,7 +341,7 @@ export function PreviewSidebar({
                         </div>
 
                         {/* Status bar */}
-                        <div className="h-6 px-3 flex items-center justify-between bg-[#1e1e21] border-t border-border/30 text-[10px] text-muted-foreground">
+                        <div className="h-6 px-3 flex items-center justify-between bg-card border-t border-border/30 text-[10px] text-muted-foreground">
                             <div className="flex items-center gap-3">
                                 <span className="flex items-center gap-1">
                                     <GitBranch className="h-3 w-3" />
@@ -367,7 +367,7 @@ export function PreviewSidebar({
 // Welcome screen when no file is open
 function EditorWelcomeScreen({ onFileSelect }: { onFileSelect: () => void }) {
     return (
-        <div className="flex flex-col items-center justify-center h-full bg-[#131314] text-center px-6">
+        <div className="flex flex-col items-center justify-center h-full bg-background text-center px-6">
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -376,7 +376,7 @@ function EditorWelcomeScreen({ onFileSelect }: { onFileSelect: () => void }) {
             >
                 <div className="relative">
                     <div className="absolute inset-0 rounded-full bg-primary/10 blur-2xl" />
-                    <div className="relative p-4 rounded-2xl bg-[#1e1e21] border border-border/50">
+                    <div className="relative p-4 rounded-2xl bg-card border border-border/50">
                         <Code2 className="h-12 w-12 text-primary" strokeWidth={1.5} />
                     </div>
                 </div>

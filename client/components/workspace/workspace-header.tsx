@@ -20,6 +20,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
+import Link from "next/link";
 interface WorkspaceHeaderProps {
     projectName?: string;
     isBuilding?: boolean;
@@ -46,9 +47,11 @@ export function WorkspaceHeader({
                     <div className="flex aspect-square size-8 min-w-8 min-h-8 items-center justify-center rounded-lg text-sidebar-primary-foreground">
                         <Image width={86} height={86} src="/images/logo.png" alt="Nexus AI Logo" className="size-8 object-contain" />
                     </div>
+                    <Link href={'/'}>
                     <span className="font-bold text-lg tracking-tight hidden sm:block">
                         Nexus<span className="text-primary">AI</span>
                     </span>
+                    </Link>
                 </div>
 
                 <div className="h-6 w-px bg-border hidden sm:block" />

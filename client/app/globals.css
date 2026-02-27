@@ -51,143 +51,168 @@
 }
 
 /* =============================================
-   LIGHT THEME — Gemini-inspired clean minimal
+   LIGHT THEME — Refined Zinc Professional
+   Clean, minimal, and sophisticated
    ============================================= */
 :root {
-  --radius: 0.75rem;
+  --radius: 0.875rem;
 
-  /* Core surfaces — Gemini light: very slightly cool off-white (zinc feel) */
-  --background: oklch(0.975 0.002 265);
-  /* #f8f9fa zinc-white */
-  --foreground: oklch(0.15 0.006 265);
-  /* #202124 cool dark text */
+  /* Core surfaces — Zinc-50 base (#fafafa) */
+  --background: oklch(0.985 0.001 264);
+  /* #fafafa — zinc-50 ultra clean */
+  --foreground: oklch(0.13 0.003 264);
+  /* #18181b — zinc-900 deep text */
 
-  /* Cards — pure white with zinc undertone */
+  /* Cards — Pure white elevated */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.006 265);
+  /* #ffffff pure white */
+  --card-foreground: oklch(0.13 0.003 264);
 
+  /* Popovers — White with subtle shadow */
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.006 265);
+  --popover-foreground: oklch(0.13 0.003 264);
 
-  /* Primary — Google Blue */
-  --primary: oklch(0.52 0.18 258);
-  /* #1a73e8 Google blue */
-  --primary-foreground: oklch(1 0 0);
+  /* Primary — Vibrant blue accent */
+  --primary: oklch(0.55 0.19 258);
+  /* #2563eb — blue-600 vibrant */
+  --primary-foreground: oklch(0.99 0 0);
 
-  /* Secondary — zinc chip/pill */
-  --secondary: oklch(0.92 0.004 265);
-  /* #e8eaed zinc-gray */
-  --secondary-foreground: oklch(0.20 0.006 265);
+  /* Secondary — Zinc-100 subtle (#f4f4f5) */
+  --secondary: oklch(0.965 0.002 264);
+  /* #f4f4f5 — zinc-100 */
+  --secondary-foreground: oklch(0.19 0.004 264);
+  /* #27272a — zinc-800 */
 
-  /* Muted */
-  --muted: oklch(0.93 0.003 265);
-  --muted-foreground: oklch(0.46 0.008 265);
-  /* #5f6368 */
+  /* Muted — Zinc-100 background */
+  --muted: oklch(0.965 0.002 264);
+  /* #f4f4f5 */
+  --muted-foreground: oklch(0.48 0.005 264);
+  /* #52525b — zinc-600 */
 
-  /* Accent — zinc hover */
-  --accent: oklch(0.91 0.005 265);
-  --accent-foreground: oklch(0.15 0.006 265);
+  /* Accent — Zinc-100 interactive (#f4f4f5) */
+  --accent: oklch(0.965 0.002 264);
+  /* #f4f4f5 */
+  --accent-foreground: oklch(0.13 0.003 264);
 
-  --destructive: oklch(0.55 0.22 25);
+  /* Destructive */
+  --destructive: oklch(0.58 0.22 25);
+  /* Red-500 */
 
-  /* Borders — zinc dividers */
-  --border: oklch(0.87 0.004 265);
-  /* #dadce0 */
-  --input: oklch(0.92 0.003 265);
-  --ring: oklch(0.52 0.18 258);
+  /* Borders — Zinc-200 elegant (#e4e4e7) */
+  --border: oklch(0.90 0.003 264);
+  /* #e4e4e7 — zinc-200 */
+  --input: oklch(0.965 0.002 264);
+  /* #f4f4f5 — zinc-100 */
+  --ring: oklch(0.55 0.19 258);
+  /* Blue focus */
 
-  /* Charts */
-  --chart-1: oklch(0.52 0.18 258);
-  --chart-2: oklch(0.55 0.20 145);
-  --chart-3: oklch(0.70 0.18 80);
-  --chart-4: oklch(0.55 0.22 25);
-  --chart-5: oklch(0.60 0.15 295);
+  /* Charts — Vibrant professional */
+  --chart-1: oklch(0.55 0.19 258);
+  /* Blue */
+  --chart-2: oklch(0.56 0.20 152);
+  /* Emerald */
+  --chart-3: oklch(0.68 0.17 75);
+  /* Amber */
+  --chart-4: oklch(0.58 0.22 25);
+  /* Rose */
+  --chart-5: oklch(0.60 0.18 285);
+  /* Purple */
 
-  /* Sidebar — Gemini light: clean zinc-white panel */
-  --sidebar: oklch(0.965 0.003 265);
-  /* #f1f3f4 zinc sidebar */
-  --sidebar-foreground: oklch(0.20 0.006 265);
-  --sidebar-primary: oklch(0.52 0.18 258);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.88 0.006 265);
-  /* zinc hover */
-  --sidebar-accent-foreground: oklch(0.15 0.006 265);
-  --sidebar-border: oklch(0.87 0.004 265);
-  --sidebar-ring: oklch(0.52 0.18 258);
+  /* Sidebar — Zinc-50 (#fafafa) */
+  --sidebar: oklch(0.985 0.001 264);
+  /* #fafafa */
+  --sidebar-foreground: oklch(0.19 0.004 264);
+  /* #27272a — zinc-800 */
+  --sidebar-primary: oklch(0.55 0.19 258);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.965 0.002 264);
+  /* #f4f4f5 — zinc-100 hover */
+  --sidebar-accent-foreground: oklch(0.13 0.003 264);
+  --sidebar-border: oklch(0.90 0.003 264);
+  /* #e4e4e7 — zinc-200 */
+  --sidebar-ring: oklch(0.55 0.19 258);
 }
 
 /* =============================================
-   DARK THEME — Gemini exact zinc-dark
-   #131314 base · zinc/charcoal surfaces · Google blue accents
+   DARK THEME — Refined Zinc Professional Dark
+   Deep, sophisticated, and high-contrast
    ============================================= */
 .dark {
-  /* Core background — Gemini's near-black zinc base */
-  --background: oklch(0.115 0.005 265);
-  /* #131314 — barely-cool zinc-black */
-  --foreground: oklch(0.905 0.005 265);
-  /* #e3e4e6 — cool zinc-white text */
+  /* Core background — Zinc-950 deep (#09090b) */
+  --background: oklch(0.10 0.002 264);
+  /* #09090b — zinc-950 rich black */
+  --foreground: oklch(0.98 0.001 264);
+  /* #fafafa — zinc-50 crisp white */
 
-  /* Cards — zinc-dark elevated surface (#1e1e21) */
-  --card: oklch(0.155 0.006 265);
-  /* #1e1e21 zinc card */
-  --card-foreground: oklch(0.905 0.005 265);
+  /* Cards — Zinc-900 elevated (#18181b) */
+  --card: oklch(0.14 0.003 264);
+  /* #18181b — zinc-900 refined */
+  --card-foreground: oklch(0.98 0.001 264);
 
-  /* Popover / dropdown — slightly lighter zinc (#26262a) */
-  --popover: oklch(0.185 0.007 265);
-  /* #26262a */
-  --popover-foreground: oklch(0.905 0.005 265);
+  /* Popover — Zinc-900 (#18181b) */
+  --popover: oklch(0.14 0.003 264);
+  /* #18181b — zinc-900 */
+  --popover-foreground: oklch(0.98 0.001 264);
 
-  /* Primary — Google blue for links & active states */
-  --primary: oklch(0.72 0.14 258);
-  /* #8ab4f8 */
-  --primary-foreground: oklch(0.115 0.005 265);
+  /* Primary — Vibrant blue (#3b82f6) */
+  --primary: oklch(0.62 0.22 258);
+  /* #3b82f6 — blue-500 vibrant */
+  --primary-foreground: oklch(0.99 0 0);
 
-  /* Secondary — zinc chip surface (#2a2a2e) */
-  --secondary: oklch(0.215 0.007 265);
-  /* #2a2a2e */
-  --secondary-foreground: oklch(0.86 0.005 265);
+  /* Secondary — Zinc-800 (#27272a) */
+  --secondary: oklch(0.20 0.004 264);
+  /* #27272a — zinc-800 */
+  --secondary-foreground: oklch(0.98 0.001 264);
 
-  /* Muted — zinc input/code bg (#1e1e21) */
-  --muted: oklch(0.155 0.006 265);
-  /* same as card */
-  --muted-foreground: oklch(0.565 0.008 265);
-  /* #8e8e93 zinc muted */
+  /* Muted — Zinc-800 subtle */
+  --muted: oklch(0.20 0.004 264);
+  /* #27272a — zinc-800 */
+  --muted-foreground: oklch(0.58 0.006 264);
+  /* #71717a — zinc-500 */
 
-  /* Accent — sidebar hover: desaturated steel pill (#2a3a5c) */
-  --accent: oklch(0.275 0.028 265);
-  /* #2a2d33 zinc-blue hover */
-  --accent-foreground: oklch(0.905 0.005 265);
+  /* Accent — Zinc-800 interactive (#27272a) */
+  --accent: oklch(0.20 0.004 264);
+  /* #27272a — zinc-800 */
+  --accent-foreground: oklch(0.98 0.001 264);
 
-  --destructive: oklch(0.65 0.22 25);
+  /* Destructive */
+  --destructive: oklch(0.62 0.24 28);
+  /* Red-500 */
 
-  /* Borders — zinc dividers (#3a3a3d), very subtle */
-  --border: oklch(0.275 0.007 265);
-  /* #3a3a3d */
-  --input: oklch(0.195 0.007 265);
-  /* #26262a — input bg same as popover */
-  --ring: oklch(0.72 0.14 258);
-  /* Google blue focus */
+  /* Borders — Zinc-800 elegant (#27272a) */
+  --border: oklch(0.20 0.004 264);
+  /* #27272a — zinc-800 */
+  --input: oklch(0.14 0.003 264);
+  /* #18181b — zinc-900 */
+  --ring: oklch(0.62 0.22 258);
+  /* Blue focus */
 
-  /* Charts */
-  --chart-1: oklch(0.72 0.14 258);
-  --chart-2: oklch(0.70 0.18 145);
-  --chart-3: oklch(0.80 0.18 85);
-  --chart-4: oklch(0.65 0.22 25);
-  --chart-5: oklch(0.68 0.16 295);
+  /* Charts — Vibrant professional */
+  --chart-1: oklch(0.62 0.22 258);
+  /* Blue-500 */
+  --chart-2: oklch(0.64 0.22 152);
+  /* Emerald-500 */
+  --chart-3: oklch(0.72 0.18 75);
+  /* Amber-400 */
+  --chart-4: oklch(0.62 0.24 28);
+  /* Rose-500 */
+  --chart-5: oklch(0.64 0.20 285);
+  /* Purple-500 */
 
-  /* Sidebar — #1c1c1f zinc-charcoal, slightly darker than card */
-  --sidebar: oklch(0.138 0.006 265);
-  /* #1c1c1f Gemini sidebar */
-  --sidebar-foreground: oklch(0.86 0.005 265);
-  --sidebar-primary: oklch(0.72 0.14 258);
-  /* Google blue active text */
-  --sidebar-primary-foreground: oklch(0.115 0.005 265);
-  --sidebar-accent: oklch(0.225 0.015 265);
-  /* active item bg — zinc hover pill */
-  --sidebar-accent-foreground: oklch(0.905 0.005 265);
-  --sidebar-border: oklch(0.225 0.006 265);
-  /* barely-there zinc border */
-  --sidebar-ring: oklch(0.72 0.14 258);
+  /* Sidebar — Zinc-950 (#09090b) */
+  --sidebar: oklch(0.10 0.002 264);
+  /* #09090b — zinc-950 */
+  --sidebar-foreground: oklch(0.90 0.003 264);
+  /* #e4e4e7 — zinc-200 */
+  --sidebar-primary: oklch(0.62 0.22 258);
+  /* Blue active */
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.14 0.003 264);
+  /* #18181b — zinc-900 hover */
+  --sidebar-accent-foreground: oklch(0.98 0.001 264);
+  --sidebar-border: oklch(0.16 0.003 264);
+  /* Zinc-875 subtle */
+  --sidebar-ring: oklch(0.62 0.22 258);
 }
 
 /* =============================================
@@ -233,16 +258,16 @@
    ============================================= */
 @layer utilities {
 
-  /* Gemini-style Google blue gradient */
+  /* Vibrant blue gradient */
   .custom-gradient {
     background-image: linear-gradient(135deg,
-        #1a73e8 0%,
-        #4285f4 50%,
-        #8ab4f8 100%);
+        #2563eb 0%,
+        #3b82f6 50%,
+        #60a5fa 100%);
   }
 
   .gradient-text {
-    @apply bg-linear-to-r from-[#4285f4] via-[#8ab4f8] to-[#4285f4] bg-clip-text text-transparent;
+    @apply bg-linear-to-r from-[#3b82f6] via-[#60a5fa] to-[#3b82f6] bg-clip-text text-transparent;
   }
 
   /* Glass card — frosted dark surface */
@@ -250,24 +275,24 @@
     @apply bg-card/90 backdrop-blur-xl border border-border shadow-lg;
   }
 
-  /* Glow effects — Google blue glow like Gemini focus states */
+  /* Glow effects — Vibrant blue glow */
   .glow-cyan {
     box-shadow:
-      0 0 20px oklch(0.72 0.14 258 / 25%),
-      0 0 40px oklch(0.72 0.14 258 / 12%);
+      0 0 24px oklch(0.62 0.22 258 / 30%),
+      0 0 48px oklch(0.62 0.22 258 / 15%);
   }
 
   .glow-cyan-strong {
     box-shadow:
-      0 0 30px oklch(0.72 0.14 258 / 35%),
-      0 0 60px oklch(0.72 0.14 258 / 18%),
-      0 0 90px oklch(0.72 0.14 258 / 8%);
+      0 0 32px oklch(0.62 0.22 258 / 40%),
+      0 0 64px oklch(0.62 0.22 258 / 22%),
+      0 0 96px oklch(0.62 0.22 258 / 10%);
   }
 
-  /* Google blue border glow */
+  /* Blue border glow */
   .border-glow {
-    border: 1px solid oklch(0.72 0.14 258 / 40%);
-    box-shadow: 0 0 20px oklch(0.72 0.14 258 / 20%);
+    border: 1px solid oklch(0.62 0.22 258 / 45%);
+    box-shadow: 0 0 24px oklch(0.62 0.22 258 / 25%);
   }
 
   /* Scrollbar utilities */
@@ -280,10 +305,10 @@
     display: none;
   }
 
-  /* Gemini-style thin scrollbar — Google blue tint */
+  /* Refined thin scrollbar — Blue accent */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.72 0.14 258 / 30%) transparent;
+    scrollbar-color: oklch(0.62 0.22 258 / 35%) transparent;
   }
 
   .scrollbar-thin::-webkit-scrollbar {
@@ -296,24 +321,24 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: oklch(0.72 0.14 258 / 30%);
+    background: oklch(0.62 0.22 258 / 35%);
     border-radius: 999px;
     transition: background 0.2s ease;
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.72 0.14 258 / 55%);
+    background: oklch(0.62 0.22 258 / 60%);
   }
 
-  /* Subtle dot grid — Gemini-like */
+  /* Subtle dot grid */
   .tech-grid {
     background-image:
-      linear-gradient(oklch(0.72 0.14 258 / 5%) 1px, transparent 1px),
-      linear-gradient(90deg, oklch(0.72 0.14 258 / 5%) 1px, transparent 1px);
+      linear-gradient(oklch(0.62 0.22 258 / 6%) 1px, transparent 1px),
+      linear-gradient(90deg, oklch(0.62 0.22 258 / 6%) 1px, transparent 1px);
     background-size: 50px 50px;
   }
 
-  /* Animated border — Google blue shimmer */
+  /* Animated border — Blue shimmer */
   @keyframes border-flow {
 
     0%,
@@ -329,9 +354,9 @@
   .animated-border {
     position: relative;
     background: linear-gradient(90deg,
-        oklch(0.52 0.18 258),
-        oklch(0.72 0.14 258),
-        oklch(0.52 0.18 258));
+        oklch(0.55 0.19 258),
+        oklch(0.62 0.22 258),
+        oklch(0.55 0.19 258));
     background-size: 200% 200%;
     animation: border-flow 3s ease infinite;
   }
@@ -361,15 +386,15 @@
 
   .hero-mesh-gradient {
     background:
-      radial-gradient(ellipse 80% 60% at 10% 20%, oklch(0.52 0.18 258 / 10%) 0%, transparent 60%),
-      radial-gradient(ellipse 60% 70% at 80% 15%, oklch(0.60 0.15 295 / 8%) 0%, transparent 55%),
-      radial-gradient(ellipse 70% 50% at 50% 80%, oklch(0.72 0.14 258 / 6%) 0%, transparent 60%),
+      radial-gradient(ellipse 80% 60% at 10% 20%, oklch(0.62 0.22 258 / 12%) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 70% at 80% 15%, oklch(0.64 0.20 285 / 10%) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 50% at 50% 80%, oklch(0.62 0.22 258 / 8%) 0%, transparent 60%),
       var(--background);
   }
 
-  /* Heading gradient — primary-based */
+  /* Heading gradient — Vibrant blue */
   .hero-gradient-text {
-    background: linear-gradient(135deg, #4285f4 0%, #8ab4f8 40%, #4285f4 100%);
+    background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 40%, #3b82f6 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -467,7 +492,7 @@
   }
 
   /* =============================================
-     CODE EDITOR — Monaco & IDE Styles
+     CODE EDITOR — Monaco & IDE Styles (Zinc Theme)
      ============================================= */
 
   /* Monaco editor container */
@@ -483,18 +508,18 @@
   }
 
   .monaco-editor .slider {
-    background: oklch(0.72 0.14 258 / 20%) !important;
+    background: oklch(0.20 0.004 264 / 30%) !important;
     border-radius: 4px;
   }
 
   .monaco-editor .slider:hover {
-    background: oklch(0.72 0.14 258 / 35%) !important;
+    background: oklch(0.62 0.22 258 / 50%) !important;
   }
 
   /* Editor bracket highlight */
   .monaco-editor .bracket-match {
-    background-color: oklch(0.72 0.14 258 / 15%) !important;
-    border: 1px solid oklch(0.72 0.14 258 / 30%) !important;
+    background-color: oklch(0.62 0.22 258 / 15%) !important;
+    border: 1px solid oklch(0.62 0.22 258 / 30%) !important;
   }
 
   /* Line highlight animation */
@@ -502,11 +527,11 @@
 
     0%,
     100% {
-      background-color: oklch(0.155 0.006 265);
+      background-color: oklch(0.14 0.003 264);
     }
 
     50% {
-      background-color: oklch(0.185 0.007 265);
+      background-color: oklch(0.20 0.004 264);
     }
   }
 
@@ -516,11 +541,11 @@
   }
 
   .file-tree-item:hover {
-    background: oklch(0.225 0.015 265);
+    background: oklch(0.20 0.004 264);
   }
 
   .file-tree-item.active {
-    background: oklch(0.275 0.028 265);
+    background: oklch(0.24 0.005 264);
   }
 
   /* Editor tab animation */
@@ -542,39 +567,40 @@
 
   /* Code syntax highlight glow for special tokens */
   .mtk1 {
-    color: #D4D4D4;
+    color: #D4D4D8;
   }
 
+  /* zinc-300 */
   .mtk5 {
-    color: #569CD6;
+    color: #8ab4f8;
   }
 
-  /* keywords */
+  /* keywords - blue */
   .mtk6 {
-    color: #CE9178;
+    color: #fda4af;
   }
 
-  /* strings */
+  /* strings - rose-300 */
   .mtk7 {
-    color: #B5CEA8;
+    color: #86efac;
   }
 
-  /* numbers */
+  /* numbers - green-300 */
   .mtk12 {
-    color: #4EC9B0;
+    color: #67e8f9;
   }
 
-  /* types */
+  /* types - cyan-300 */
   .mtk15 {
-    color: #DCDCAA;
+    color: #fde047;
   }
 
-  /* functions */
+  /* functions - yellow-300 */
 
   /* File explorer scrollbar */
   .file-explorer-scroll {
     scrollbar-width: thin;
-    scrollbar-color: oklch(0.72 0.14 258 / 20%) transparent;
+    scrollbar-color: oklch(0.20 0.004 264) transparent;
   }
 
   .file-explorer-scroll::-webkit-scrollbar {
@@ -586,12 +612,12 @@
   }
 
   .file-explorer-scroll::-webkit-scrollbar-thumb {
-    background: oklch(0.72 0.14 258 / 20%);
+    background: oklch(0.20 0.004 264);
     border-radius: 999px;
   }
 
   .file-explorer-scroll::-webkit-scrollbar-thumb:hover {
-    background: oklch(0.72 0.14 258 / 40%);
+    background: oklch(0.24 0.005 264);
   }
 
   /* Minimap styles */
@@ -630,9 +656,9 @@
 
   .code-shimmer {
     background: linear-gradient(90deg,
-        oklch(0.155 0.006 265) 25%,
-        oklch(0.215 0.007 265) 50%,
-        oklch(0.155 0.006 265) 75%);
+        oklch(0.14 0.003 264) 25%,
+        oklch(0.20 0.004 264) 50%,
+        oklch(0.14 0.003 264) 75%);
     background-size: 200% 100%;
     animation: code-shimmer 1.5s ease-in-out infinite;
   }

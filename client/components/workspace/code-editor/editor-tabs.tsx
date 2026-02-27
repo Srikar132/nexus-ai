@@ -42,7 +42,7 @@ export function EditorTabs({
     }
 
     return (
-        <div className="flex items-center h-9 bg-[#1e1e21] border-b border-border/50 overflow-hidden">
+        <div className="flex items-center h-9 bg-card border-b border-border/50 overflow-hidden">
             <div
                 ref={tabsContainerRef}
                 className="flex items-center overflow-x-auto scrollbar-none"
@@ -60,8 +60,8 @@ export function EditorTabs({
                             className={cn(
                                 "group flex items-center gap-2 h-9 px-3 border-r border-border/30 cursor-pointer transition-colors",
                                 activeTabId === tab.id
-                                    ? "bg-[#131314] border-t-2 border-t-primary"
-                                    : "bg-[#1e1e21] hover:bg-[#26262a] border-t-2 border-t-transparent"
+                                    ? "bg-background border-t-2 border-t-primary"
+                                    : "bg-card hover:bg-muted border-t-2 border-t-transparent"
                             )}
                             onClick={() => onTabSelect(tab.id)}
                         >
