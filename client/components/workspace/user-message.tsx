@@ -19,22 +19,22 @@ export function UserMessage({ message }: UserMessageProps) {
   if (!textContent) return null;
 
   return (
-    <div className="flex items-start gap-3 py-4">
-      {/* User Avatar */}
-      <Avatar className="size-8 shrink-0">
-        <AvatarFallback className="bg-muted">
-          <User className="size-4" />
-        </AvatarFallback>
-      </Avatar>
+    <div className="py-2 flex flex-col items-end max-w-[75%] ml-auto">
+      {/* User Avatar and Label at the top */}
+      <div className="flex items-center gap-2 mb-2">
+        <div className="text-xs font-medium text-muted-foreground">You</div>
+        <Avatar className="size-6 shrink-0">
+          <AvatarFallback className="bg-muted">
+            <User className="size-3" />
+          </AvatarFallback>
+        </Avatar>
+      </div>
 
       {/* Message Content */}
-      <div className="flex-1 space-y-1">
-        <div className="text-xs font-medium text-muted-foreground">You</div>
-        <div className="bg-primary text-primary-foreground rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%]">
-          <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-break-word">
-            {textContent}
-          </p>
-        </div>
+      <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-3 py-2">
+        <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-break-word">
+          {textContent}
+        </p>
       </div>
     </div>
   );

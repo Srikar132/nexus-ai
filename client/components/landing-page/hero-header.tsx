@@ -33,7 +33,7 @@ export function HeroHeader() {
                 </Badge>
 
                 {/* Heading */}
-                <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-extrabold tracking-tight leading-[1.05] max-w-5xl">
+                <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight leading-[1.05] max-w-5xl">
                     <span className="block">The autonomous</span>
                     <span className="hero-gradient-text block mt-1">software factory</span>
                 </h1>

@@ -30,7 +30,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${urbanist.variable} ${jetbrainsMono.variable} antialiased`}
       >
@@ -38,10 +38,10 @@ export default function RootLayout({
           <SessionProvider>
             <TooltipProvider>
               <TanstackClientProvider>
-              <ProjectDialogProvider>
-                {children}
-              </ProjectDialogProvider>
-            </TanstackClientProvider>
+                <ProjectDialogProvider>
+                  {children}
+                </ProjectDialogProvider>
+              </TanstackClientProvider>
             </TooltipProvider>
           </SessionProvider>
         </ThemeProvider>

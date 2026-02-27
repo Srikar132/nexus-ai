@@ -2,16 +2,12 @@
 
 import {
     Code2,
-    Rocket,
     Share2,
     Settings,
     ChevronDown,
-    Sparkles,
     GitBranch,
-    Shield,
     Activity,
     Bot,
-    Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
