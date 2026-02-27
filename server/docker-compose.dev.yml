@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: nexusai-redis-dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-dev-data:/data
+    command: redis-server --appendonly yes --requirepass devpassword
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - nexusai-network
+    environment:
+      - REDIS_PASSWORD=devpassword
+
+volumes:
+  redis-dev-data:
+    driver: local
+
+networks:
+  nexusai-network:
+    driver: bridge

@@ -1,0 +1,6 @@
+{
+    "postman.settings.dotenv-detection-notification-visibility": false,
+    "files.exclude": {
+        "**/__pycache__": true
+    }
+}
