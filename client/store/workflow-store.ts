@@ -28,6 +28,7 @@
 import { create } from "zustand";
 import type { WorkflowStage, Message, SSEEvent, StepFeedItem } from "@/types/workflow";
 import { useRightSidebar } from "@/store/right-sidebar-store";
+import { streamingDebug } from "@/lib/streaming-debug";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -157,6 +158,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
    *                  (this is what gives true streaming — no batching)
    */
   handleSSEEvent: (event: SSEEvent) => {
+    streamingDebug.sse(event, "RECEIVED");
+
     if (process.env.NODE_ENV === "development") {
       console.log("[WorkflowStore] SSE:", event.type, event);
     }
@@ -256,25 +259,37 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         break;
       }
 
-      // ── Text chunk — THE CRITICAL FIX FOR STREAMING ───────────
-      // Every single chunk triggers set() immediately.
-      // No batching, no waiting for "done". React re-renders on each
-      // chunk, giving the true word-by-word typewriter effect.
+      // ── Text chunk — ENHANCED STREAMING FIX ───────────────────
+      // Force immediate state update with minimal object changes
+      // to trigger React re-renders as fast as possible
       case "text_chunk":
-        set((s) => ({
-          is_streaming:   true,
-          isThinking:     false,
-          thinkingStatus: null,
-          stepFeed:       [],  // clear step feed when text starts flowing
-          active_role:    event.role,
-          inProgressMessage: s.inProgressMessage
-            ? {
-                ...s.inProgressMessage,
-                // append — do NOT replace — each chunk is additive
-                text: s.inProgressMessage.text + event.chunk,
-              }
-            : { role: event.role, text: event.chunk, artifact: null },
-        }));
+        streamingDebug.performance.startStreaming();
+        
+        set((s) => {
+          const currentMessage = s.inProgressMessage;
+          const newText = currentMessage ? currentMessage.text + event.chunk : event.chunk;
+          
+          streamingDebug.store("TEXT_CHUNK", { 
+            currentLength: currentMessage?.text?.length || 0,
+            chunkLength: event.chunk.length,
+            newLength: newText.length 
+          });
+          
+          return {
+            is_streaming:   true,
+            isThinking:     false,
+            thinkingStatus: null,
+            stepFeed:       [],  // clear step feed when text starts flowing
+            active_role:    event.role,
+            inProgressMessage: currentMessage
+              ? {
+                  role: currentMessage.role,
+                  text: newText,
+                  artifact: currentMessage.artifact,
+                }
+              : { role: event.role, text: event.chunk, artifact: null },
+          };
+        });
         break;
 
       // ── Artifact received ─────────────────────────────────────

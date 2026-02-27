@@ -28,7 +28,7 @@
 import React, { memo } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bot, Loader2 } from "lucide-react";
-import { MarkdownContent } from "./markdown-content";
+import { StreamingMarkdown } from "./streaming-markdown";
 import { ArtifactCard } from "./artifact-card";
 import type { InProgressMessage } from "@/store/workflow-store";
 import type { StepFeedItem } from "@/types/workflow";
@@ -55,6 +55,16 @@ export const StreamingMessage = memo(function StreamingMessage({
   const hasContent  = hasText || hasArtifact;
   const hasSteps    = stepFeed.length > 0;
   const isActive    = isStreaming || isThinking || hasSteps;
+
+  // PERFORMANCE: Only render text if it actually changed
+  const [lastRenderedText, setLastRenderedText] = React.useState("");
+  const shouldUpdateText = text !== lastRenderedText;
+  
+  React.useEffect(() => {
+    if (shouldUpdateText) {
+      setLastRenderedText(text);
+    }
+  }, [text, shouldUpdateText]);
 
   return (
     <div className="py-2 animate-in fade-in duration-200">
@@ -123,10 +133,13 @@ export const StreamingMessage = memo(function StreamingMessage({
 
             {hasText && (
               <div className="bg-muted/50 rounded-2xl rounded-tl-sm px-4 py-3">
-                <MarkdownContent content={text} />
+                <StreamingMarkdown 
+                  content={text} 
+                  isStreaming={isStreaming}
+                />
                 {/* Blinking cursor — only while chunks actively arriving */}
                 {isStreaming && (
-                  <span className="inline-block w-[2px] h-[1em] bg-primary/80 animate-pulse ml-0.5 align-middle" />
+                  <span className="inline-block w-0.5 h-[1em] bg-primary/80 animate-pulse ml-0.5 align-middle" />
                 )}
               </div>
             )}

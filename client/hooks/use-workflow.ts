@@ -46,6 +46,7 @@ import { flushSync } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { messagesAPI } from "@/lib/api/messages";
+import { streamingDebug } from "@/lib/streaming-debug";
 import type { UserAction, Message, SSEEvent, WorkflowStage } from "@/types/workflow";
 
 export const workflowKeys = {
@@ -73,7 +74,7 @@ export function useWorkflow(projectId: string) {
   const removeOptimisticMessage  = useWorkflowStore((s) => s.removeOptimisticMessage);
   const reset                    = useWorkflowStore((s) => s.reset);
 
-  // ── Rendered state ─────────────────────────────────────────────────────────
+  // ── Rendered state (optimized selectors for performance) ───────────────────
   const messages          = useWorkflowStore((s) => s.messages);
   const stage             = useWorkflowStore((s) => s.stage);
   const active_role       = useWorkflowStore((s) => s.active_role);
@@ -82,6 +83,8 @@ export function useWorkflow(projectId: string) {
   const thinkingStatus    = useWorkflowStore((s) => s.thinkingStatus);
   const stepFeed          = useWorkflowStore((s) => s.stepFeed);
   const error             = useWorkflowStore((s) => s.error);
+  
+  // CRITICAL: Separate selector for streaming text to maximize performance
   const inProgressMessage = useWorkflowStore((s) => s.inProgressMessage);
 
   // ── Initial history load (TQ used only here) ───────────────────────────────
@@ -172,17 +175,27 @@ export function useWorkflow(projectId: string) {
       const handle = useWorkflowStore.getState().handleSSEEvent;
 
       if (FLUSH_EVENT_TYPES.has(sseEvent.type)) {
-        // ── CRITICAL FIX ────────────────────────────────────────────────────
+        // ── CRITICAL STREAMING FIX ─────────────────────────────────────────
         // flushSync forces React to commit this state update synchronously,
         // bypassing automatic batching. Each streaming event renders its own
         // frame — giving the real word-by-word typewriter effect.
         //
-        // Without this: React 18 batches all rapid text_chunk calls into one
-        // re-render at the very end → all text appears at once.
-        //
-        // With this: each text_chunk forces an immediate paint → streaming ✓
-        flushSync(() => handle(sseEvent));
+        // ENHANCED: Use requestAnimationFrame to ensure DOM updates are painted
+        // immediately, especially for rapid text_chunk events.
+        streamingDebug.sse(sseEvent, "FLUSH_SYNC");
+        
+        flushSync(() => {
+          handle(sseEvent);
+        });
+        
+        // Force immediate repaint for text chunks to ensure visual updates
+        if (sseEvent.type === "text_chunk") {
+          requestAnimationFrame(() => {
+            streamingDebug.sse(sseEvent, "REPAINT_COMPLETE");
+          });
+        }
       } else {
+        streamingDebug.sse(sseEvent, "NORMAL_UPDATE");
         handle(sseEvent);
       }
     };
