@@ -223,7 +223,7 @@ def conductor_node(state: GraphState) -> dict:
             messages.append(msg)
     messages.append({"role": "user", "content": user_message})
 
-    llm      = get_llm("llama-3.1-8b")   # Best tool-calling reliability
+    llm      = get_llm("claude-haiku-4-5")
     response = llm.chat_with_tools(messages, _CONDUCTOR_TOOLS, max_tokens=2048, temperature=0)
 
     if not response.tool_calls:
@@ -367,8 +367,8 @@ def artificer_node(state: GraphState) -> dict:
             system      = system_prompt,
             user_prompt = f"Build this application:\n\n{build_description}",
             tools       = tools,
-            max_iter    = 20,
-            model       = "llama-3.1-8b",
+            max_iter    = 5,
+            model       = "claude-haiku-4-5",
         )
 
         publish(project_id, {"type": "agent_done", "role": "artificer"})
@@ -497,7 +497,7 @@ def guardian_node(state: GraphState) -> dict:
         user_prompt = f"Perform security testing on the application at {app_url}.",
         tools       = tools,
         max_iter    = 15,
-        model       = "llama-3.1-8b",
+        model       = "claude-haiku-4-5",
     )
 
     publish(project_id, {"type": "agent_done", "role": "guardian"})
@@ -653,7 +653,7 @@ def artificer_fix_node(state: GraphState) -> dict:
         user_prompt = f"Fix these security issues:\n{issues_text}",
         tools       = tools,
         max_iter    = 12,
-        model       = "llama-3.1-8b",
+        model       = "claude-haiku-4-5",
     )
 
     publish(project_id, {"type": "agent_done", "role": "artificer"})
@@ -743,7 +743,7 @@ def deployer_node(state: GraphState) -> dict:
         user_prompt = f"Deploy the application.\nEnvironment variables: {env_str}",
         tools       = tools,
         max_iter    = 15,
-        model       = "llama-3.1-8b",
+        model       = "claude-haiku-4-5",
     )
 
     publish(project_id, {"type": "agent_done", "role": "deployer"})

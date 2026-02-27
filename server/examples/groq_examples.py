@@ -33,7 +33,7 @@ def groq_code_generation():
     """Show Groq's code generation capabilities"""
     print("=== Groq Code Generation ===\n")
     
-    llm = get_llm("llama-3.1-8b")  # Mixtral is good for code
+    llm = get_llm("llama-3.1-70b")  # Mixtral is good for code
     
     response = llm.chat(
         "Write a Python function to calculate fibonacci numbers recursively",

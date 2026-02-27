@@ -11,7 +11,11 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 import asyncio
+import time
+import logging
 from concurrent.futures import ThreadPoolExecutor
+
+log = logging.getLogger(__name__)
 
 # Provider-specific imports
 try:
@@ -95,18 +99,28 @@ class AnthropicProvider(BaseLLMProvider):
         self.client = anthropic.Anthropic(api_key=config.api_key)
     
     def _convert_messages(self, messages: List[Dict]) -> tuple[str, List[Dict]]:
-        """Convert to Anthropic format: separate system message"""
+        """
+        Convert to Anthropic format: separate system message.
+        
+        IMPORTANT: Anthropic tool-calling uses structured content blocks —
+        assistant messages have [{"type":"tool_use", ...}] and user messages
+        have [{"type":"tool_result", ...}].  We must pass those through
+        unchanged.  Only plain-string content gets the simple {"role","content"}
+        treatment.  Dropping list content silently breaks the tool-call loop.
+        """
         system = ""
         anthropic_messages = []
         
         for msg in messages:
             if msg["role"] == "system":
-                system = msg["content"]
+                # Anthropic system is a top-level kwarg, not a message
+                system = msg["content"] if isinstance(msg["content"], str) else str(msg["content"])
             else:
-                anthropic_messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
+                # Preserve the full message dict — this keeps 'content' whether
+                # it's a plain string or a list of content blocks (tool_use /
+                # tool_result).  Also preserves any extra keys like 'tool_calls'.
+                clean = {"role": msg["role"], "content": msg["content"]}
+                anthropic_messages.append(clean)
         
         return system, anthropic_messages
     
@@ -155,16 +169,39 @@ class AnthropicProvider(BaseLLMProvider):
                 "input_schema": tool["parameters"]
             })
         
-        response = self.client.messages.create(
-            model=self.config.model,
-            max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
-            temperature=kwargs.get("temperature", self.config.temperature),
-            system=system,
-            messages=anthropic_messages,
-            tools=anthropic_tools,
-        )
+        # Retry with exponential backoff for 429 rate-limit errors.
+        # Anthropic free/low tiers have aggressive per-minute token limits.
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                response = self.client.messages.create(
+                    model=self.config.model,
+                    max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
+                    temperature=kwargs.get("temperature", self.config.temperature),
+                    system=system,
+                    messages=anthropic_messages,
+                    tools=anthropic_tools,
+                    tool_choice={"type": "auto"},
+                )
+                break  # success
+            except Exception as e:
+                error_str = str(e)
+                is_rate_limit = "429" in error_str or "rate" in error_str.lower() or "too many" in error_str.lower()
+                if is_rate_limit and attempt < max_retries - 1:
+                    wait = 2 ** attempt * 5  # 5s, 10s, 20s, 40s
+                    log.warning(
+                        "Anthropic 429 rate-limit on attempt %d/%d — retrying in %ds",
+                        attempt + 1, max_retries, wait,
+                    )
+                    time.sleep(wait)
+                else:
+                    raise
         
-        # Extract tool calls
+        # Extract tool calls and text from response content blocks.
+        # Anthropic returns a list of content blocks: "text" and "tool_use".
+        # We must capture ALL tool_use blocks — each one is a separate tool call
+        # with its own unique 'id' that the next user message must reference
+        # via a tool_result block.
         tool_calls = []
         content = ""
         
@@ -173,9 +210,9 @@ class AnthropicProvider(BaseLLMProvider):
                 content += block.text
             elif block.type == "tool_use":
                 tool_calls.append({
-                    "id": block.id,
+                    "id":   block.id,
                     "name": block.name,
-                    "args": block.input
+                    "args": block.input,
                 })
         
         return LLMResponse(
@@ -227,11 +264,36 @@ class OpenAIProvider(BaseLLMProvider):
         # Convert tools to OpenAI format
         openai_tools = [{"type": "function", "function": tool} for tool in tools]
         
+        # Sanitise: ensure content is string|None, preserve tool_calls, etc.
+        clean_messages = []
+        for msg in messages:
+            m = {"role": msg["role"]}
+            content = msg.get("content")
+            if isinstance(content, list):
+                # Anthropic-style blocks → flatten for OpenAI
+                parts = []
+                for block in content:
+                    if isinstance(block, dict) and "text" in block:
+                        parts.append(block["text"])
+                    elif isinstance(block, dict) and "content" in block:
+                        parts.append(str(block["content"]))
+                    elif isinstance(block, str):
+                        parts.append(block)
+                m["content"] = "\n".join(parts) if parts else ""
+            else:
+                m["content"] = content
+            if "tool_calls" in msg:
+                m["tool_calls"] = msg["tool_calls"]
+            if msg["role"] == "tool":
+                m["tool_call_id"] = msg.get("tool_call_id", "")
+                m["name"] = msg.get("name", "")
+            clean_messages.append(m)
+        
         response = self.client.chat.completions.create(
             model=self.config.model,
             max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
             temperature=kwargs.get("temperature", self.config.temperature),
-            messages=messages,
+            messages=clean_messages,
             tools=openai_tools,
         )
         
@@ -240,10 +302,14 @@ class OpenAIProvider(BaseLLMProvider):
         
         if message.tool_calls:
             for tc in message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    args = {"raw": tc.function.arguments}
                 tool_calls.append({
                     "id": tc.id,
                     "name": tc.function.name,
-                    "args": json.loads(tc.function.arguments)
+                    "args": args,
                 })
         
         return LLMResponse(
@@ -295,23 +361,76 @@ class GroqProvider(BaseLLMProvider):
         # Convert tools to Groq format (same as OpenAI)
         groq_tools = [{"type": "function", "function": tool} for tool in tools]
         
-        response = self.client.chat.completions.create(
-            model=self.config.model,
-            max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
-            temperature=kwargs.get("temperature", self.config.temperature),
-            messages=messages,
-            tools=groq_tools,
-        )
+        # Sanitise messages: strip any keys Groq doesn't understand.
+        # Groq follows the OpenAI format — assistant messages may carry
+        # "tool_calls" and tool-result messages have role="tool".
+        # We must NOT accidentally drop the "tool_calls" key from
+        # assistant messages, or Groq will reject subsequent "role":"tool"
+        # messages that reference those call IDs.
+        clean_messages = []
+        for msg in messages:
+            m = {"role": msg["role"]}
+            # content — must be a string (or None for tool-calling assistant msgs)
+            content = msg.get("content")
+            if isinstance(content, list):
+                # Anthropic-style content blocks → flatten to string for Groq
+                parts = []
+                for block in content:
+                    if isinstance(block, dict) and "text" in block:
+                        parts.append(block["text"])
+                    elif isinstance(block, dict) and "content" in block:
+                        parts.append(str(block["content"]))
+                    elif isinstance(block, str):
+                        parts.append(block)
+                m["content"] = "\n".join(parts) if parts else ""
+            else:
+                m["content"] = content
+            # Preserve tool_calls on assistant messages
+            if "tool_calls" in msg:
+                m["tool_calls"] = msg["tool_calls"]
+            # Preserve tool-result fields
+            if msg["role"] == "tool":
+                m["tool_call_id"] = msg.get("tool_call_id", "")
+                m["name"] = msg.get("name", "")
+            clean_messages.append(m)
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.config.model,
+                max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
+                temperature=kwargs.get("temperature", self.config.temperature),
+                messages=clean_messages,
+                tools=groq_tools,
+                tool_choice="auto",
+                parallel_tool_calls=False,   # serialise calls — more reliable
+            )
+        except Exception as e:
+            # If the API rejects tool-calling (e.g. unsupported model), fall
+            # back to a plain completion so we at least get text back.
+            import logging
+            logging.getLogger(__name__).warning(
+                "Groq tool-calling request failed (%s), falling back to plain chat", e
+            )
+            response = self.client.chat.completions.create(
+                model=self.config.model,
+                max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
+                temperature=kwargs.get("temperature", self.config.temperature),
+                messages=clean_messages,
+            )
         
         message = response.choices[0].message
         tool_calls = []
         
         if message.tool_calls:
             for tc in message.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments)
+                except (json.JSONDecodeError, TypeError):
+                    args = {"raw": tc.function.arguments}
                 tool_calls.append({
                     "id": tc.id,
                     "name": tc.function.name,
-                    "args": json.loads(tc.function.arguments)
+                    "args": args,
                 })
         
         return LLMResponse(
@@ -330,6 +449,13 @@ class UnifiedLLM:
     # Predefined model configurations
     MODELS = {
         # Anthropic models
+        "claude-haiku-4-5": LLMConfig(
+            provider=LLMProvider.ANTHROPIC,
+            model="claude-haiku-4-5",
+            api_key=settings.ANTHROPIC_API_KEY,
+            max_tokens=8192,
+            temperature=0.0
+        ),
         "claude-3-5-sonnet": LLMConfig(
             provider=LLMProvider.ANTHROPIC,
             model="claude-3-5-sonnet-20241022",
@@ -465,10 +591,22 @@ class UnifiedLLM:
         tool_defs = []
         for tool in tools:
             if isinstance(tool, BaseTool):
+                schema = tool.args_schema.model_json_schema() if tool.args_schema else {"type": "object", "properties": {}}
+                # Clean Pydantic JSON Schema for OpenAI/Groq compatibility:
+                # Remove 'title' at top level and from each property (Groq can choke on them),
+                # remove '$defs' (unused in flat tool schemas).
+                schema.pop("title", None)
+                schema.pop("$defs", None)
+                schema.pop("definitions", None)
+                for prop in schema.get("properties", {}).values():
+                    if isinstance(prop, dict):
+                        prop.pop("title", None)
+                # Ensure 'type' is present
+                schema.setdefault("type", "object")
                 tool_defs.append({
                     "name": tool.name,
                     "description": tool.description,
-                    "parameters": tool.args_schema.model_json_schema() if tool.args_schema else {}
+                    "parameters": schema,
                 })
             else:
                 tool_defs.append(tool)

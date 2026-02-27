@@ -1,67 +1,67 @@
 /**
  * store/workflow-store.ts
  *
- * Zustand is the SINGLE source of truth for all live workflow state.
+ * Zustand is the SINGLE source of truth for ALL live workflow state —
+ * messages, streaming text, step feed, thinking status.
  *
- * KEY FIXES:
- *  1. hydrateMessages — replaced the broken `length === 0` guard with a
- *     proper merge: keeps optimistic messages (temp-* ids), merges in real
- *     history from server. Safe to call multiple times (after invalidation).
+ * KEY ARCHITECTURE DECISIONS:
  *
- *  2. handleSSEEvent is a STABLE function — it reads current state via
- *     get() inside the function body. This means it can be stored in a
- *     useRef in the hook and never change reference, which prevents the
- *     SSE reconnect-on-every-chunk bug.
+ * 1. TanStack Query is used ONLY for the initial history fetch (one-time load).
+ *    After that, all state lives here. TQ is NOT used to cache or manage
+ *    streaming state — doing so caused the "all text appears at once" bug
+ *    because TQ batches/deduplicates updates.
  *
- *  3. "thinking" SSE event now also advances stage to "thinking" so the
- *     WorkspaceHeader correctly shows the building indicator during conductor
- *     analysis (stage was staying "idle" before).
+ * 2. text_chunk events append directly to inProgressMessage.text.
+ *    Each chunk triggers a Zustand set() which causes React to re-render
+ *    immediately — giving the true typewriter/streaming effect.
  *
- *  4. "done" event with deploy_url/repo_url — forwards to sidebar store
- *     so the deploy success card can show the live URL.
+ * 3. stepFeed is a NEW array that accumulates step/tool_call/tool_result
+ *    events as a timeline. The UI renders these as a Copilot-style feed
+ *    where each entry appends below the previous — never replaces.
+ *    "thinking" still replaces a single pulsing status bar (separate state).
  *
- *  5. "build_failed" event type added — backend emits this on Celery errors.
+ * 4. inProgressMessage is role-keyed — agent_start commits any prior one.
  *
- *  6. inProgressMessage is role-keyed — if a new agent_start arrives while
- *     a previous inProgressMessage hasn't been committed (e.g. Guardian
- *     starts before Artificer's "done" fires), we commit the previous one
- *     first to avoid losing it.
+ * 5. hydrateMessages merges server history with optimistic messages safely.
  */
 
 import { create } from "zustand";
-import type { WorkflowStage, Message, SSEEvent } from "@/types/workflow";
+import type { WorkflowStage, Message, SSEEvent, StepFeedItem } from "@/types/workflow";
 import { useRightSidebar } from "@/store/right-sidebar-store";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface InProgressMessage {
-  role: string;
-  text: string;
+  role:     string;
+  text:     string;
   artifact: {
     artifact_type: string;
-    title: string;
-    content: unknown;
+    title:         string;
+    content:       unknown;
   } | null;
 }
 
 interface WorkflowStore {
-  // Rendered messages (history + committed streamed)
+  // ── Committed messages (history + finished streamed messages)
   messages: Message[];
 
-  // Workflow state
-  stage: WorkflowStage;
-  active_role: string | null;
+  // ── Workflow state
+  stage:        WorkflowStage;
+  active_role:  string | null;
   is_streaming: boolean;
-  error: string | null;
+  error:        string | null;
 
-  // Thinking indicator
-  isThinking: boolean;
+  // ── Thinking indicator (single pulsing status bar — replaces itself)
+  isThinking:     boolean;
   thinkingStatus: string | null;
 
-  // The message being assembled right now
+  // ── Step feed (Copilot-style timeline — each entry appends, never replaces)
+  stepFeed: StepFeedItem[];
+
+  // ── Message being assembled right now from text_chunk events
   inProgressMessage: InProgressMessage | null;
 
-  // Actions
+  // ── Actions
   hydrateMessages:          (messages: Message[]) => void;
   addOptimisticMessage:     (message: Message) => void;
   confirmOptimisticMessage: (tempId: string, realId: string) => void;
@@ -80,12 +80,12 @@ const INITIAL_STATE = {
   error:             null as string | null,
   isThinking:        false,
   thinkingStatus:    null as string | null,
+  stepFeed:          [] as StepFeedItem[],
   inProgressMessage: null as InProgressMessage | null,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Commit an InProgressMessage into the messages array. Returns null if empty. */
 function commitInProgress(ip: InProgressMessage): Message | null {
   const content: Message["content"] = [];
 
@@ -112,30 +112,22 @@ function commitInProgress(ip: InProgressMessage): Message | null {
   };
 }
 
+let _stepIdCounter = 0;
+function makeStepId() {
+  return `step-${Date.now()}-${++_stepIdCounter}`;
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   ...INITIAL_STATE,
 
-  /**
-   * Merge server history into messages[].
-   * Safe to call multiple times — merges by id, keeps optimistic messages.
-   * Optimistic messages have ids starting with "temp-" and are preserved
-   * until confirmed or removed.
-   */
   hydrateMessages: (serverMessages: Message[]) => {
-    const current = get().messages;
-
-    // Keep any optimistic messages (temp-* ids not yet confirmed)
+    const current   = get().messages;
     const optimistic = current.filter((m) => m.id.startsWith("temp-"));
-
-    // Build a set of server IDs for dedup
-    const serverIds = new Set(serverMessages.map((m) => m.id));
-
-    // Optimistic messages that don't have a matching server id yet stay
-    const pendingOptimistic = optimistic.filter((m) => !serverIds.has(m.id));
-
-    set({ messages: [...serverMessages, ...pendingOptimistic] });
+    const serverIds  = new Set(serverMessages.map((m) => m.id));
+    const pending    = optimistic.filter((m) => !serverIds.has(m.id));
+    set({ messages: [...serverMessages, ...pending] });
   },
 
   addOptimisticMessage: (message: Message) => {
@@ -144,21 +136,25 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
   confirmOptimisticMessage: (tempId: string, realId: string) => {
     set((s) => ({
-      messages: s.messages.map((m) =>
-        m.id === tempId ? { ...m, id: realId } : m
-      ),
+      messages: s.messages.map((m) => m.id === tempId ? { ...m, id: realId } : m),
     }));
   },
 
   removeOptimisticMessage: (tempId: string) => {
-    set((s) => ({
-      messages: s.messages.filter((m) => m.id !== tempId),
-    }));
+    set((s) => ({ messages: s.messages.filter((m) => m.id !== tempId) }));
   },
 
   /**
    * STABLE function — reads state via get(), never closes over stale state.
-   * Store this in a useRef in the hook — reference never changes.
+   * Store in a useRef in the hook. Reference never changes.
+   *
+   * SSE event routing:
+   *   "thinking"   → update thinkingStatus (replaces pulsing bar)
+   *   "step"       → push new StepFeedItem to stepFeed (appends to timeline)
+   *   "tool_call"  → find matching step in feed, attach input
+   *   "tool_result"→ find matching step in feed, attach result, mark done
+   *   "text_chunk" → append chunk to inProgressMessage.text IMMEDIATELY
+   *                  (this is what gives true streaming — no batching)
    */
   handleSSEEvent: (event: SSEEvent) => {
     if (process.env.NODE_ENV === "development") {
@@ -167,7 +163,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
 
     switch (event.type) {
 
-      // ── Stage transitions ──────────────────────────────────────
+      // ── Stage transitions ─────────────────────────────────────
       case "stage_change":
         set({ stage: event.stage, error: null });
         if (event.stage === "building") {
@@ -175,22 +171,73 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         }
         break;
 
-      // ── Thinking status ────────────────────────────────────────
-      // Also advances stage to "thinking" so header indicators work
+      // ── Thinking (replaces single status bar) ─────────────────
       case "thinking":
         set({
           isThinking:     true,
           thinkingStatus: event.status,
           active_role:    event.role ?? null,
-          // Only advance to "thinking" if we're still idle — don't
-          // override "building", "testing" etc. with "thinking"
           stage: get().stage === "idle" ? "thinking" : get().stage,
         });
         break;
 
-      // ── Agent starting ─────────────────────────────────────────
-      // If there's an existing inProgressMessage from a previous agent,
-      // commit it first so we don't lose it.
+      // ── Step (APPENDS to timeline feed — Copilot style) ────────
+      // Each step gets its own row. tool_call/tool_result will attach
+      // their data to this step row by matching the tool name.
+      case "step": {
+        const newStep: StepFeedItem = {
+          id:     makeStepId(),
+          tool:   event.tool,
+          status: event.status,
+          role:   event.role,
+          state:  "pending",
+        };
+        set((s) => ({
+          stepFeed:       [...s.stepFeed, newStep],
+          // Clear the pulsing "thinking" bar when an actual step begins
+          isThinking:     false,
+          thinkingStatus: null,
+        }));
+        break;
+      }
+
+      // ── Tool call detail (attaches input to most recent matching step) ──
+      case "tool_call": {
+        set((s) => {
+          // Find the last step with this tool that has no input yet
+          const feed = [...s.stepFeed];
+          for (let i = feed.length - 1; i >= 0; i--) {
+            if (feed[i].tool === event.tool && !feed[i].input) {
+              feed[i] = { ...feed[i], input: event.input };
+              break;
+            }
+          }
+          return { stepFeed: feed };
+        });
+        break;
+      }
+
+      // ── Tool result (attaches result to matching step, marks done) ──
+      case "tool_result": {
+        set((s) => {
+          const feed = [...s.stepFeed];
+          for (let i = feed.length - 1; i >= 0; i--) {
+            if (feed[i].tool === event.tool && feed[i].state === "pending") {
+              feed[i] = {
+                ...feed[i],
+                result:   event.result,
+                is_error: event.is_error,
+                state:    "done",
+              };
+              break;
+            }
+          }
+          return { stepFeed: feed };
+        });
+        break;
+      }
+
+      // ── Agent starting ────────────────────────────────────────
       case "agent_start": {
         const existing = get().inProgressMessage;
         const toCommit = existing ? commitInProgress(existing) : null;
@@ -200,30 +247,37 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           is_streaming:      false,
           isThinking:        false,
           thinkingStatus:    null,
+          // Clear the step feed when a new agent starts — each agent
+          // gets its own clean feed during its execution window.
+          stepFeed:          [],
           inProgressMessage: { role: event.role, text: "", artifact: null },
-          // Commit previous agent's message if it was never committed
           messages: toCommit ? [...s.messages, toCommit] : s.messages,
         }));
         break;
       }
 
-      // ── Text chunk arriving ────────────────────────────────────
+      // ── Text chunk — THE CRITICAL FIX FOR STREAMING ───────────
+      // Every single chunk triggers set() immediately.
+      // No batching, no waiting for "done". React re-renders on each
+      // chunk, giving the true word-by-word typewriter effect.
       case "text_chunk":
         set((s) => ({
           is_streaming:   true,
           isThinking:     false,
           thinkingStatus: null,
+          stepFeed:       [],  // clear step feed when text starts flowing
           active_role:    event.role,
           inProgressMessage: s.inProgressMessage
             ? {
                 ...s.inProgressMessage,
+                // append — do NOT replace — each chunk is additive
                 text: s.inProgressMessage.text + event.chunk,
               }
             : { role: event.role, text: event.chunk, artifact: null },
         }));
         break;
 
-      // ── Artifact received ──────────────────────────────────────
+      // ── Artifact received ─────────────────────────────────────
       case "artifact": {
         const artifactData = {
           artifact_type: event.artifact_type,
@@ -238,9 +292,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         break;
       }
 
-      // ── Agent done ─────────────────────────────────────────────
-      // Stop streaming indicators but keep inProgressMessage visible.
-      // It stays displayed until "done" commits it.
+      // ── Agent done ────────────────────────────────────────────
       case "agent_done":
         set({
           is_streaming:   false,
@@ -250,12 +302,9 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         });
         break;
 
-      // ── Stream done ────────────────────────────────────────────
-      // Commit inProgressMessage into messages[]. Connection stays open.
-      // This is just the end of ONE agent's response, not the whole workflow.
+      // ── Stream done — commit inProgressMessage to messages[] ──
       case "done": {
         const ip = get().inProgressMessage;
-
         set((s) => {
           const committed = ip ? commitInProgress(ip) : null;
           return {
@@ -264,11 +313,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
             is_streaming:      false,
             isThinking:        false,
             thinkingStatus:    null,
-            // Keep stage as-is - workflow may continue
+            stepFeed:          [],
           };
         });
 
-        // Forward deploy URLs to sidebar if present
         const doneEvent = event as SSEEvent & { deploy_url?: string; repo_url?: string };
         if (doneEvent.deploy_url) {
           // useRightSidebar.getState().setDeployUrl?.(doneEvent.deploy_url, doneEvent.repo_url);
@@ -276,11 +324,9 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         break;
       }
 
-      // ── Close stream (workflow complete) ──────────────────────
-      // This signals the entire workflow session is done
+      // ── Close stream (entire workflow complete) ───────────────
       case "close_stream":
         set((s) => ({
-          // Reset to idle if we were in a transient state
           stage: (["thinking", "building", "testing", "fixing", "deploying"] as WorkflowStage[])
             .includes(s.stage) && !["waiting_env", "complete", "error"].includes(s.stage)
             ? "idle"
@@ -288,13 +334,14 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           is_streaming:   false,
           isThinking:     false,
           thinkingStatus: null,
+          stepFeed:       [],
         }));
         break;
 
-      // ── Build failed ───────────────────────────────────────────
+      // ── Build failed ──────────────────────────────────────────
       case "build_failed":
         set((s) => {
-          const ip = s.inProgressMessage;
+          const ip        = s.inProgressMessage;
           const committed = ip ? commitInProgress(ip) : null;
           return {
             stage:             "error",
@@ -303,12 +350,13 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
             isThinking:        false,
             thinkingStatus:    null,
             inProgressMessage: null,
+            stepFeed:          [],
             messages: committed ? [...s.messages, committed] : s.messages,
           };
         });
         break;
 
-      // ── Error ──────────────────────────────────────────────────
+      // ── Error ─────────────────────────────────────────────────
       case "error":
         set({
           stage:             "error",
@@ -317,14 +365,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           isThinking:        false,
           thinkingStatus:    null,
           inProgressMessage: null,
+          stepFeed:          [],
         });
-        break;
-
-      // ── Tool call/result (dev visibility only, no state change) ─
-      case "tool_call":
-      case "tool_result":
-        // These are informational — shown in a dev panel if you have one,
-        // but don't affect message rendering.
         break;
     }
   },

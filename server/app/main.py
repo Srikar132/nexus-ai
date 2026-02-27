@@ -9,7 +9,9 @@ from app.api.routes.v1.project_routes import router as project_router
 from app.api.routes.v1.message_routes import router as message_router
 from app.api.routes.v1.build_routes import router as build_router
 from app.api.routes.v1.artifact_routes import router as artifact_router
+import logging
 
+logging.getLogger().setLevel(logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

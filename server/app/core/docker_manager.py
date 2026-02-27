@@ -285,11 +285,34 @@ class DockerManager:
 
     # ── File I/O ──────────────────────────────────────────────────
 
+    def _ensure_workspace(self) -> None:
+        """Ensure /workspace exists inside the container. Idempotent."""
+        try:
+            self.exec("mkdir -p /workspace")
+        except Exception as e:
+            log.warning("Failed to ensure /workspace: %s", e)
+
     def write_file(self, path: str, content: str) -> None:
         """Write a file to /workspace/{path} inside the container."""
         # Path traversal guard
         if ".." in path:
             raise ValueError(f"Unsafe path rejected: {path!r}")
+
+        # Sanitize: strip leading "/" and "/workspace/" so the tar entry
+        # is always a relative path extracted into /workspace.
+        # LLMs sometimes pass absolute paths like "/tmp/requirements.txt"
+        # or "/workspace/main.py" which break Docker put_archive.
+        path = path.lstrip("/")
+        if path.startswith("workspace/"):
+            path = path[len("workspace/"):]
+
+
+        if not path:
+            raise ValueError("Empty file path after sanitization")
+
+        # Ensure /workspace exists (guards against stale container handles
+        # and images that don't have the directory pre-created).
+        self._ensure_workspace()
 
         parent = "/".join(path.split("/")[:-1])
         if parent:
@@ -304,9 +327,19 @@ class DockerManager:
         stream.seek(0)
         self.container.put_archive("/workspace", stream)
 
+        # Verify the file was actually written
+        exit_code, _ = self.exec(f"test -f /workspace/{path}")
+        if exit_code != 0:
+            raise RuntimeError(f"File verification failed — /workspace/{path} not found after write")
+
     def read_file(self, path: str) -> str:
         if ".." in path:
             raise ValueError(f"Unsafe path rejected: {path!r}")
+        path = path.lstrip("/")
+        if path.startswith("workspace/"):
+            path = path[len("workspace/"):]
+        if path.startswith("tmp/"):
+            path = path[len("tmp/"):]
         _, output = self.exec(f"cat /workspace/{path}")
         return output
 

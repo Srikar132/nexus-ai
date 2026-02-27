@@ -3,42 +3,50 @@
 /**
  * hooks/use-workflow.ts
  *
- * KEY FIXES:
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE REAL STREAMING BUG — React 18 automatic batching
+ * ─────────────────────────────────────────────────────────────────────────────
  *
- * 1. SSE RECONNECT BUG FIXED — the original put handleSSEEvent (a Zustand store
- *    method) into useCallback deps. Zustand returns a new function reference on
- *    every render that reads from the store, so handleSSEEventWithSideEffects
- *    changed reference on every SSE event → connectSSE changed → useEffect
- *    cleanup fired → SSE disconnected mid-stream → chunks accumulated in state
- *    but no re-render happened → text appeared all at once at the end.
+ *   React 18 introduced automatic batching for ALL state updates, including
+ *   those triggered from native event handlers like EventSource.onmessage.
  *
- *    Fix: store handleSSEEvent in a useRef. The ref always points to the latest
- *    version of the function without being a reactive dep. SSE connection is now
- *    stable for the entire mount lifetime of the component.
+ *   Before React 18: only updates inside React synthetic event handlers were batched.
+ *   After React 18:  EVERYTHING is batched — setTimeout, Promises, native
+ *                    event listeners, SSE onmessage — everything.
  *
- * 2. select() SIDE EFFECT FIXED — TanStack Query's select() is a pure transform
- *    function called on every render. Calling hydrateMessages() inside it caused
- *    unpredictable Zustand writes. Moved to onSuccess callback which fires only
- *    when fresh data arrives from the server.
+ *   Result: 100 text_chunk events fire in rapid succession. Each calls
+ *   Zustand set(). React sees 100 set() calls in the same event loop task
+ *   and says "I'll batch these into ONE re-render at the end."
+ *   The component only re-renders ONCE — showing the fully accumulated text.
+ *   Streaming appears completely broken even though data arrives correctly.
  *
- * 3. deployConfirm REMOVED — messagesAPI.deployConfirm() called the old
- *    /messages/deploy-confirm endpoint which no longer exists. Env vars are
- *    submitted via sendAction({ action: "provide_env_vars", vars: {...} }).
+ *   THE FIX: `flushSync` from react-dom
+ *   flushSync(() => update()) forces React to flush and commit the DOM
+ *   synchronously BEFORE returning. It opts out of batching for that call.
+ *   Since it runs inside a native onmessage callback (outside React's
+ *   scheduler), React cannot re-batch it.
  *
- * 4. SSE retry now checks `is_streaming` in addition to stage so we don't
- *    reconnect when a build just finished streaming but stage hasn't updated yet.
+ *   We apply flushSync ONLY to high-frequency streaming events:
+ *     text_chunk, step, tool_call, tool_result, thinking
  *
- * 5. History rehydration on invalidation — after "done", TanStack Query
- *    invalidates and re-fetches in background. onSuccess now calls
- *    hydrateMessages() which properly merges (not blindly replaces), so
- *    the refreshed server data syncs without losing optimistic messages.
+ *   NOT for: done, error, stage_change, close_stream — one-shot events
+ *   where batching is harmless. Over-using flushSync degrades performance.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Architecture
+ * ─────────────────────────────────────────────────────────────────────────────
+ *   - TanStack Query: ONLY for initial history fetch. Seeds Zustand once.
+ *   - Zustand: single source of truth for ALL live state after that.
+ *   - connectSSE has projectId as its ONLY dep — never reconnects due to
+ *     handler reference changes because we read from getState() in onmessage.
  */
 
 import { useEffect, useRef, useCallback } from "react";
+import { flushSync } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { messagesAPI } from "@/lib/api/messages";
-import type { UserAction, Message, SSEEvent } from "@/types/workflow";
+import type { UserAction, Message, SSEEvent, WorkflowStage } from "@/types/workflow";
 
 export const workflowKeys = {
   messages: (projectId: string) => ["messages", projectId] as const,
@@ -46,69 +54,55 @@ export const workflowKeys = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// Events that MUST render immediately — opt out of React 18 automatic batching
+const FLUSH_EVENT_TYPES = new Set([
+  "text_chunk",
+  "step",
+  "tool_call",
+  "tool_result",
+  "thinking",
+]);
+
 export function useWorkflow(projectId: string) {
   const queryClient = useQueryClient();
 
-  // ── Stable references to store actions ────────────────────────────────────
-  // Accessing these directly from the store (not via hook return value) gives us
-  // stable references that don't change between renders.
+  // ── Store actions ──────────────────────────────────────────────────────────
   const hydrateMessages          = useWorkflowStore((s) => s.hydrateMessages);
   const addOptimisticMessage     = useWorkflowStore((s) => s.addOptimisticMessage);
   const confirmOptimisticMessage = useWorkflowStore((s) => s.confirmOptimisticMessage);
   const removeOptimisticMessage  = useWorkflowStore((s) => s.removeOptimisticMessage);
-  const handleSSEEvent           = useWorkflowStore((s) => s.handleSSEEvent);
   const reset                    = useWorkflowStore((s) => s.reset);
 
-  // ── Rendered state (these can change freely — they don't drive SSE) ────────
-  const messages         = useWorkflowStore((s) => s.messages);
-  const stage            = useWorkflowStore((s) => s.stage);
-  const active_role      = useWorkflowStore((s) => s.active_role);
-  const is_streaming     = useWorkflowStore((s) => s.is_streaming);
-  const isThinking       = useWorkflowStore((s) => s.isThinking);
-  const thinkingStatus   = useWorkflowStore((s) => s.thinkingStatus);
-  const error            = useWorkflowStore((s) => s.error);
+  // ── Rendered state ─────────────────────────────────────────────────────────
+  const messages          = useWorkflowStore((s) => s.messages);
+  const stage             = useWorkflowStore((s) => s.stage);
+  const active_role       = useWorkflowStore((s) => s.active_role);
+  const is_streaming      = useWorkflowStore((s) => s.is_streaming);
+  const isThinking        = useWorkflowStore((s) => s.isThinking);
+  const thinkingStatus    = useWorkflowStore((s) => s.thinkingStatus);
+  const stepFeed          = useWorkflowStore((s) => s.stepFeed);
+  const error             = useWorkflowStore((s) => s.error);
   const inProgressMessage = useWorkflowStore((s) => s.inProgressMessage);
 
-  // ── THE KEY FIX: stable ref for SSE handler ────────────────────────────────
-  // handleSSEEvent from Zustand is stable by design (create() guarantees this),
-  // but we also want to call queryClient.invalidateQueries on "done".
-  // We store the combined handler in a ref so connectSSE never needs to
-  // re-run just because queryClient changed.
-  const handleSSERef = useRef<(event: SSEEvent) => void>(null!);
-  handleSSERef.current = useCallback(
-    (sseEvent: SSEEvent) => {
-      handleSSEEvent(sseEvent);
-      if (sseEvent.type === "done" || sseEvent.type === "build_failed") {
-        // Silent background invalidation — won't cause UI flicker because
-        // hydrateMessages() merges rather than replaces.
-        queryClient.invalidateQueries({
-          queryKey: workflowKeys.messages(projectId),
-        });
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [] // intentionally empty — we always want the latest via the ref pattern
-  );
-
-  // ── Initial history load ───────────────────────────────────────────────────
+  // ── Initial history load (TQ used only here) ───────────────────────────────
   const { isLoading: isLoadingHistory, isError: isHistoryError } = useQuery({
-    queryKey:           workflowKeys.messages(projectId),
-    queryFn:            async () => {
+    queryKey:             workflowKeys.messages(projectId),
+    queryFn:              async () => {
       const response = await messagesAPI.list(projectId, 0, 50);
       if (response.error) throw new Error(response.error);
       return response.data!;
     },
-    enabled:            !!projectId && projectId !== "undefined",
-    staleTime:          30_000,       // 30s — allow background refresh
-    refetchOnWindowFocus: false,      // SSE keeps us live, no need to refetch on focus
-    refetchOnMount:     "always",     // Always check for new history on mount
+    enabled:              !!projectId && projectId !== "undefined",
+    staleTime:            30_000,
+    refetchOnWindowFocus: false,
+    refetchOnMount:       "always",
   });
 
-  // Hydrate Zustand whenever TanStack Query has fresh data
-  // Using onSuccess equivalent — subscribe to query data changes
-  const historyData = queryClient.getQueryData<{ messages: Message[]; active_build?: { status: string } }>(
-    workflowKeys.messages(projectId)
-  );
+  // Seed Zustand once when TQ gets fresh history
+  const historyData = queryClient.getQueryData<{
+    messages: Message[];
+    active_build?: { status: string };
+  }>(workflowKeys.messages(projectId));
 
   useEffect(() => {
     if (historyData?.messages) {
@@ -116,25 +110,23 @@ export function useWorkflow(projectId: string) {
     }
   }, [historyData, hydrateMessages]);
 
-  // ── Restore stage on page reload mid-build ─────────────────────────────────
+  // Restore stage on page reload mid-build
   useEffect(() => {
     const activeBuild = historyData?.active_build;
     if (!activeBuild) return;
 
     const statusToStage: Record<string, WorkflowStage> = {
-      building:     "building",
-      running:      "building",
-      thinking:     "thinking",
-      testing:      "testing",
-      fixing:       "fixing",
-      deploying:    "deploying",
-      waiting_env:  "waiting_env",
+      building:    "building",
+      running:     "building",
+      thinking:    "thinking",
+      testing:     "testing",
+      fixing:      "fixing",
+      deploying:   "deploying",
+      waiting_env: "waiting_env",
     };
 
     const restored = statusToStage[activeBuild.status];
-    if (restored) {
-      useWorkflowStore.setState({ stage: restored });
-    }
+    if (restored) useWorkflowStore.setState({ stage: restored });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyData?.active_build?.status]);
 
@@ -142,8 +134,6 @@ export function useWorkflow(projectId: string) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const retryRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // connectSSE has NO reactive deps — it reads everything via refs.
-  // This is the key: the function identity is stable for the entire mount.
   const connectSSE = useCallback(() => {
     if (!projectId || projectId === "undefined") return;
 
@@ -162,42 +152,57 @@ export function useWorkflow(projectId: string) {
     const es = new EventSource(url, { withCredentials: true });
 
     es.onopen = () => {
-      if (process.env.NODE_ENV === "development") {
-        console.log("[SSE] Connected");
-      }
+      if (process.env.NODE_ENV === "development") console.log("[SSE] Connected");
     };
 
-    es.onmessage = (event) => {
+    es.onmessage = (rawEvent) => {
+      let sseEvent: SSEEvent;
       try {
-        const sseEvent: SSEEvent = JSON.parse(event.data);
-        
-        // Always use the ref — never closes over a stale handler
-        handleSSERef.current(sseEvent);
+        sseEvent = JSON.parse(rawEvent.data);
       } catch (err) {
-        console.error("[SSE] Parse error:", err, event.data);
+        console.error("[SSE] Parse error:", err, rawEvent.data);
+        return;
+      }
+
+      if (process.env.NODE_ENV === "development") {
+        console.log("[SSE] event:", sseEvent.type, sseEvent);
+      }
+
+      // Always read handler fresh from store — no stale closure, no reconnects.
+      const handle = useWorkflowStore.getState().handleSSEEvent;
+
+      if (FLUSH_EVENT_TYPES.has(sseEvent.type)) {
+        // ── CRITICAL FIX ────────────────────────────────────────────────────
+        // flushSync forces React to commit this state update synchronously,
+        // bypassing automatic batching. Each streaming event renders its own
+        // frame — giving the real word-by-word typewriter effect.
+        //
+        // Without this: React 18 batches all rapid text_chunk calls into one
+        // re-render at the very end → all text appears at once.
+        //
+        // With this: each text_chunk forces an immediate paint → streaming ✓
+        flushSync(() => handle(sseEvent));
+      } else {
+        handle(sseEvent);
       }
     };
 
-    es.onerror = (err) => {
-      // Server closed the connection — this is normal after all events are sent
+    es.onerror = () => {
       if (es.readyState === EventSource.CLOSED) {
         if (process.env.NODE_ENV === "development") {
-          console.log("[SSE] Connection closed by server");
+          console.log("[SSE] Server closed connection (normal end of stream)");
         }
         es.close();
         return;
       }
 
-      // Actual error — retry if build is still active
-      console.warn("[SSE] Connection error, will retry", err);
+      console.warn("[SSE] Connection error — retrying in 3s");
       es.close();
 
-      const { stage: currentStage, is_streaming: currentStreaming } = useWorkflowStore.getState();
+      const { stage: currentStage, is_streaming: cur } = useWorkflowStore.getState();
       const shouldRetry =
-        (currentStage !== "idle" &&
-        currentStage !== "complete" &&
-        currentStage !== "error") ||
-        currentStreaming;
+        (currentStage !== "idle" && currentStage !== "complete" && currentStage !== "error") ||
+        cur;
 
       if (shouldRetry) {
         retryRef.current = setTimeout(() => connectSSE(), 3_000);
@@ -205,9 +210,8 @@ export function useWorkflow(projectId: string) {
     };
 
     eventSourceRef.current = es;
-  }, [projectId]); // projectId is the ONLY dep — this is intentional
+  }, [projectId]); // projectId ONLY — this is intentional
 
-  // Connect on mount, reconnect if projectId changes
   useEffect(() => {
     connectSSE();
     return () => {
@@ -217,12 +221,22 @@ export function useWorkflow(projectId: string) {
     };
   }, [connectSSE]);
 
-  // Reset store when navigating to a different project
   useEffect(() => {
     reset();
   }, [projectId, reset]);
 
-  // ── Send action ────────────────────────────────────────────────────────────
+  // ── Ensure SSE is alive before sending ────────────────────────────────────
+  const ensureSSEConnected = useCallback(() => {
+    const state = eventSourceRef.current?.readyState;
+    if (state === undefined || state === EventSource.CLOSED) {
+      if (process.env.NODE_ENV === "development") {
+        console.log("[SSE] Reconnecting before send");
+      }
+      connectSSE();
+    }
+  }, [connectSSE]);
+
+  // ── Send message / action ──────────────────────────────────────────────────
   const sendMutation = useMutation({
     mutationFn: async (action: UserAction) => {
       const response = await messagesAPI.sendAction(projectId, action);
@@ -233,14 +247,13 @@ export function useWorkflow(projectId: string) {
     onMutate: async (action) => {
       if ("content" in action && action.content) {
         const tempId = `temp-${Date.now()}`;
-        const optimistic: Message = {
+        addOptimisticMessage({
           id:           tempId,
           role:         "user",
           message_type: "user_prompt",
           content:      [{ type: "text", content: action.content }],
           created_at:   new Date().toISOString(),
-        };
-        addOptimisticMessage(optimistic);
+        });
         return { tempId };
       }
     },
@@ -252,9 +265,7 @@ export function useWorkflow(projectId: string) {
     },
 
     onError: (err, _action, context) => {
-      if (context?.tempId) {
-        removeOptimisticMessage(context.tempId);
-      }
+      if (context?.tempId) removeOptimisticMessage(context.tempId);
       useWorkflowStore.setState({
         stage: "error",
         error: err instanceof Error ? err.message : "Failed to send message",
@@ -263,25 +274,21 @@ export function useWorkflow(projectId: string) {
   });
 
   return {
-    // Data
     messages,
     stage,
     active_role,
     is_streaming,
     isThinking,
     thinkingStatus,
+    stepFeed,
     inProgressMessage,
     error,
-
-    // Loading
     isLoadingHistory,
     isHistoryError,
     isSending: sendMutation.isPending,
-
-    // Actions
-    sendAction: (action: UserAction) => sendMutation.mutate(action),
+    sendAction: (action: UserAction) => {
+      ensureSSEConnected();
+      sendMutation.mutate(action);
+    },
   };
 }
-
-// Re-export WorkflowStage for components that need it
-type WorkflowStage = import("@/types/workflow").WorkflowStage;

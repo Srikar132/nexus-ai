@@ -279,6 +279,34 @@ def _stream_until_interrupt_or_end(wf, config: dict, db: Session, project_id: st
     )
 
 
+def _reset_graph_to_conductor(wf, config: dict, fresh_state: dict) -> None:
+    """
+    Reset the LangGraph state for this thread back to the conductor interrupt.
+
+    This is used after a build failure or worker crash to "unstick" the graph.
+    Without this, the checkpoint remembers snap.next = "artificer" (or wherever
+    it crashed) and the user can never send a new message — resume_workflow
+    would always say "A build is running".
+
+    How it works:
+      1. Re-seed the graph with a fresh initial state (like start_workflow does).
+      2. The graph streams once and parks at interrupt_before=["conductor"].
+      3. Next resume_workflow call sees snap.next = ["conductor"] and proceeds.
+    """
+    log.info("Resetting graph to conductor for thread=%s", config["configurable"]["thread_id"])
+
+    # Re-seed — this overwrites the stale checkpoint with a fresh one
+    for _ in wf.stream(fresh_state, config=config):
+        pass
+
+    snap = wf.get_state(config)
+    log.info(
+        "Graph reset complete — next=%s for thread=%s",
+        list(snap.next or []),
+        config["configurable"]["thread_id"],
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════
 # TASK 1 — START WORKFLOW
 # First user message. Seeds state, runs conductor once, then continues
@@ -344,7 +372,39 @@ def start_workflow_task(
         log.exception("start_workflow_task failed project=%s", project_id)
         publish(project_id, {"type": "build_failed", "reason": str(e)})
         publish(project_id, {"type": "close_stream"})
-        raise self.retry(exc=e, countdown=30)
+
+        # ── Reset graph state to conductor so user isn't stuck ────
+        # When a build fails mid-pipeline (e.g., at artificer or guardian),
+        # the LangGraph checkpoint remembers snap.next = "artificer" etc.
+        # Without this reset, resume_workflow_task blocks with
+        # "A build is running" forever.
+        try:
+            _reset_graph_to_conductor(wf, config, {
+                "project_id":           project_id,
+                "build_id":             None,
+                "project_name":         project_name,
+                "project_description":  project_description,
+                "chat_history":         [],
+                "current_user_input":   None,
+                "build_requested":      False,
+                "build_description":    "",
+                "tech_stack_hint":      None,
+                "run_config":           None,
+                "app_url":              None,
+                "security_iteration":   0,
+                "security_issues":      [],
+                "all_security_issues":  [],
+                "deploy_payload":       None,
+                "artifacts":            [],
+                "messages_to_save":     [],
+                "repo_url":             None,
+                "deploy_url":           None,
+                "error":                str(e),
+            })
+        except Exception:
+            log.exception("Failed to reset graph state after error project=%s", project_id)
+
+        # Don't retry — the graph is reset, user can send a fresh message
     finally:
         db.close()
 
@@ -353,6 +413,16 @@ def start_workflow_task(
 # TASK 2 — RESUME WORKFLOW
 # Every user message after the first.
 # Feeds the message to conductor and drives the graph forward.
+#
+# STALE BUILD RECOVERY:
+#   If a previous build failed mid-pipeline (at artificer, guardian, etc.),
+#   the LangGraph checkpoint still has snap.next pointing at that node.
+#   Without recovery, the user would be permanently stuck with
+#   "A build is running — please wait".
+#
+#   The fix: when snap.next is NOT conductor and the state has error set
+#   (or the previous build's status is "failed"), we reset the graph back
+#   to the conductor interrupt so the user can chat normally again.
 # ═══════════════════════════════════════════════════════════════════
 
 @celery_app.task(bind=True, name="workers.resume_workflow", max_retries=1)
@@ -375,17 +445,64 @@ def resume_workflow_task(
             raise ValueError(f"No LangGraph state for thread {thread_id}")
 
         next_nodes = list(snap.next or [])
+        state      = dict(snap.values)
 
-        # Guard: only accept user input when parked at conductor
+        # ── Stale build recovery ──────────────────────────────────
+        # If the graph is stuck at a non-conductor node (artificer, guardian,
+        # deployer, etc.) it means a previous build failed or the worker was
+        # killed mid-run. The checkpoint is stale.
+        # Recovery: reset the entire graph state back to the conductor
+        # interrupt so the user can chat again.
         if next_nodes and "conductor" not in next_nodes:
+            log.warning(
+                "resume_workflow: graph stuck at %s for project=%s — "
+                "resetting to conductor (stale build recovery)",
+                next_nodes, project_id,
+            )
             publish(project_id, {
                 "type":  "text_chunk",
-                "chunk": "🔨 A build is running — please wait until it completes.\n",
+                "chunk": "⚠️ Previous build was interrupted. Resetting so you can continue chatting.\n",
                 "role":  "conductor",
             })
-            publish(project_id, {"type": "done"})
+
+            # Preserve chat history and project info across reset
+            _reset_graph_to_conductor(wf, config, {
+                "project_id":           project_id,
+                "build_id":             None,
+                "project_name":         state.get("project_name", ""),
+                "project_description":  state.get("project_description", ""),
+                "chat_history":         state.get("chat_history", []),
+                "current_user_input":   {
+                    "message":      user_message,
+                    "message_type": message_type,
+                },
+                "build_requested":      False,
+                "build_description":    "",
+                "tech_stack_hint":      None,
+                "run_config":           None,
+                "app_url":              None,
+                "security_iteration":   0,
+                "security_issues":      [],
+                "all_security_issues":  [],
+                "deploy_payload":       None,
+                "artifacts":            [],
+                "messages_to_save":     [],
+                "repo_url":             None,
+                "deploy_url":           None,
+                "error":                None,
+            })
+
+            # Now run conductor with the user's new message
+            state = _stream_until_interrupt_or_end(wf, config, db, project_id)
+            _save_state_to_db(db, state, project_id, state.get("build_id"))
+
+            snap = wf.get_state(config)
+            if not snap.next:
+                _finalise_build(db, state)
+                publish(project_id, {"type": "close_stream"})
             return
 
+        # ── Normal flow: parked at conductor ──────────────────────
         # Inject user message into state, then resume
         wf.update_state(config, {
             "current_user_input": {
@@ -402,13 +519,39 @@ def resume_workflow_task(
         if not snap.next:
             _finalise_build(db, state)
             # Workflow completed - close SSE stream
-            publish(project_id, {"type": "close_stream"})
+        publish(project_id, {"type": "close_stream"})
 
     except Exception as e:
         log.exception("resume_workflow_task failed project=%s", project_id)
         publish(project_id, {"type": "build_failed", "reason": str(e)})
         publish(project_id, {"type": "close_stream"})
-        raise self.retry(exc=e, countdown=30)
+
+        # Reset graph so user isn't stuck after this failure too
+        try:
+            _reset_graph_to_conductor(wf, config, {
+                "project_id":           project_id,
+                "build_id":             None,
+                "project_name":         "",
+                "project_description":  "",
+                "chat_history":         [],
+                "current_user_input":   None,
+                "build_requested":      False,
+                "build_description":    "",
+                "tech_stack_hint":      None,
+                "run_config":           None,
+                "app_url":              None,
+                "security_iteration":   0,
+                "security_issues":      [],
+                "all_security_issues":  [],
+                "deploy_payload":       None,
+                "artifacts":            [],
+                "messages_to_save":     [],
+                "repo_url":             None,
+                "deploy_url":           None,
+                "error":                str(e),
+            })
+        except Exception:
+            log.exception("Failed to reset graph state after error project=%s", project_id)
     finally:
         db.close()
 

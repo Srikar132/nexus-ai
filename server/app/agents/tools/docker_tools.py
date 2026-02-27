@@ -48,6 +48,8 @@ def get_docker_tools(docker: DockerManager) -> list:
         Write a complete file into /workspace/{path} inside the container.
         Parent directories are created automatically.
         Always write the COMPLETE file — never partial or truncated content.
+        IMPORTANT: Always use relative paths like "main.py" or "src/models.py".
+        Do NOT use absolute paths like "/tmp/..." or "/workspace/...".
 
         Examples:
           write_file("main.py", "from fastapi import FastAPI\\napp = FastAPI()\\n...")

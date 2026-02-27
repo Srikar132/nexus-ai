@@ -1,53 +1,62 @@
 /**
  * types/workflow.ts
  *
- * KEY FIXES:
- *  1. build_failed added to SSEEvent — backend emits this on Celery task failure.
- *     Without it, TypeScript doesn't narrow the type and the store switch()
- *     can't handle it cleanly.
- *
- *  2. done event now includes optional deploy_url and repo_url — the backend
- *     deplyer node publishes these on the final "done" event so the sidebar
- *     can display the live URL without a separate API call.
- *
- *  3. WorkflowStage "thinking" aligned — backend publishes type="thinking"
- *     as a ThinkingEvent (not stage_change), so "thinking" as a stage is only
- *     set by the store internally. Kept in the union for type safety.
- *
- *  4. UserAction — provide_env_vars maps directly to POST /messages with
- *     action="provide_env_vars". No separate deployConfirm action needed.
+ * KEY ADDITIONS:
+ *  1. "step" event — appended to feed timeline (Copilot-style), never replaces.
+ *     Emitted by backend for each tool execution with tool name + human status.
+ *  2. tool_call / tool_result now carry is_error flag for UI coloring.
+ *  3. WorkflowStage unchanged — "thinking" is still set internally by store.
  */
 
 // ─── Stage ────────────────────────────────────────────────────────────────────
 
 export type WorkflowStage =
-  | "idle"         // No workflow running
-  | "thinking"     // Conductor analyzing (set internally when thinking event arrives)
-  | "building"     // Artificer writing code
-  | "testing"      // Guardian running security checks
-  | "fixing"       // Artificer fixing security issues
-  | "deploying"    // Deployer running
-  | "waiting_env"  // Deployer waiting for user env vars
-  | "complete"     // Successfully deployed
-  | "error";       // Something failed
+  | "idle"
+  | "thinking"
+  | "building"
+  | "testing"
+  | "fixing"
+  | "deploying"
+  | "waiting_env"
+  | "complete"
+  | "error";
 
 // ─── SSE Events ───────────────────────────────────────────────────────────────
 
 export type SSEEvent =
   | { type: "stage_change"; stage: WorkflowStage }
+  // Replaces the single pulsing status indicator — "Reasoning..."
   | { type: "thinking";     status: string; role: string }
+  // APPENDS a new row to the step timeline feed — "Writing app.py...", etc.
+  | { type: "step";         status: string; role: string; tool: string }
   | { type: "agent_start";  role: string }
   | { type: "agent_done";   role: string }
+  // Incremental text streaming — each event appends one word/chunk
   | { type: "text_chunk";   chunk: string; role: string }
   | { type: "artifact";     artifact_type: string; title: string; content: unknown }
+  // Tool detail events — appended to feed below their parent "step" row
   | { type: "tool_call";    role: string; tool: string; input: string }
-  | { type: "tool_result";  role: string; tool: string; result: string }
+  | { type: "tool_result";  role: string; tool: string; result: string; is_error: boolean }
   | { type: "file_created"; path: string; content: string; lines: number; size: number }
   | { type: "file_deleted"; path: string }
   | { type: "done";         deploy_url?: string; repo_url?: string; status?: string }
-  | { type: "close_stream" }  // Signals end of entire workflow session
+  | { type: "close_stream" }
   | { type: "build_failed"; reason: string }
   | { type: "error";        message: string };
+
+// ─── Step feed item (built from step/tool_call/tool_result events) ────────────
+
+export interface StepFeedItem {
+  id:        string;   // unique per step
+  tool:      string;
+  status:    string;
+  role:      string;
+  input?:    string;
+  result?:   string;
+  is_error?: boolean;
+  // "pending" → tool_call received, "done" → tool_result received
+  state:     "pending" | "done";
+}
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 
@@ -80,12 +89,8 @@ export interface Message {
 
 // ─── User Actions ─────────────────────────────────────────────────────────────
 
-/**
- * What the user can send — maps to POST /api/v1/projects/:id/messages
- * Backend unified endpoint handles both actions.
- */
 export type UserAction =
-  | { action: "send_message";    content: string }
+  | { action: "send_message";     content: string }
   | { action: "provide_env_vars"; vars: Record<string, string> };
 
 // ─── API response types ───────────────────────────────────────────────────────

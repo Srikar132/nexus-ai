@@ -3,22 +3,23 @@ agents/react.py
 
 ReAct (Reason + Act) loop for all agent nodes.
 
+EVENT TAXONOMY (for Copilot-style step-by-step feed in UI):
+  "thinking"    → Replaces/pulses a single status bar. "Agent is reasoning..."
+                  Only used for the initial reasoning step indicator.
+  "step"        → APPENDS to a timeline feed. Each tool-specific status message
+                  (e.g. "Writing app.py...", "Running security scan...") creates
+                  a new entry in the UI — never replaces. This is the key change
+                  from the original where everything was "thinking" and the UI
+                  just replaced the single status text.
+  "tool_call"   → APPENDS tool invocation detail (tool name + input preview).
+  "tool_result" → APPENDS tool result preview.
+  "text_chunk"  → Streaming final response, word-by-word.
+
 KEY FIXES vs original:
-  1. Anthropic tool result format fixed.
-     Anthropic requires tool results as a structured content block with the
-     matching tool_use_id. The original appended a plain user message string
-     which works for Groq/OpenAI but causes a 400 on Anthropic.
-     Now provider-aware: Anthropic gets proper tool_result blocks;
-     OpenAI/Groq get the plain-text user message format.
-
-  2. Model defaulted to "claude-3-5-sonnet" (reliable tool-calling).
-     "llama-3.3-70b" was referenced in workflow.py but doesn't exist in
-     the MODELS registry. All agent calls now use claude-3-5-sonnet which
-     has excellent tool use. Pass model= explicitly to override per node.
-
-  3. thinking status published with correct agent role on every step.
-
-  4. max_iter enforced properly — no off-by-one.
+  1. Anthropic tool result format fixed (provider-aware).
+  2. "thinking" only on iteration start; tool-specific statuses use "step".
+  3. max_iter enforced properly.
+  4. thinking status published with correct agent role on every step.
 """
 
 from __future__ import annotations
@@ -34,12 +35,12 @@ from app.core.llm import get_llm, LLMProvider
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MAX_ITER = 15
+DEFAULT_MAX_ITER = 12
 
 
-# ── Dynamic thinking messages ─────────────────────────────────────
+# ── Dynamic step messages ─────────────────────────────────────────
 
-_THINKING: dict[str, dict[str, str]] = {
+_STEP_MESSAGES: dict[str, dict[str, str]] = {
     "artificer": {
         "write_file":     "Writing {arg}...",
         "read_file":      "Reading {arg}...",
@@ -71,8 +72,8 @@ _THINKING: dict[str, dict[str, str]] = {
 }
 
 
-def _thinking_msg(role: str, tool_name: str, tool_input: dict, step: int) -> str:
-    role_map = _THINKING.get(role, {})
+def _step_msg(role: str, tool_name: str, tool_input: dict, step: int) -> str:
+    role_map = _STEP_MESSAGES.get(role, {})
     template = role_map.get(tool_name, role_map.get("_default", "Processing (step {step})..."))
 
     arg = ""
@@ -101,42 +102,6 @@ def _safe_preview(tool_input: dict) -> str:
         return str(tool_input)[:300]
 
 
-# ── Tool result formatting — provider-aware ───────────────────────
-
-def _make_tool_result_message(
-    provider:   LLMProvider,
-    tool_id:    str,
-    tool_name:  str,
-    result_str: str,
-) -> dict:
-    """
-    Format a tool result for the next LLM turn.
-
-    Anthropic requires:
-      {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "...", "content": "..."}]}
-
-    OpenAI / Groq accept:
-      {"role": "tool", "tool_call_id": "...", "content": "..."}
-    """
-    if provider == LLMProvider.ANTHROPIC:
-        return {
-            "role": "user",
-            "content": [{
-                "type":        "tool_result",
-                "tool_use_id": tool_id,
-                "content":     result_str,
-            }],
-        }
-    else:
-        # OpenAI / Groq
-        return {
-            "role":         "tool",
-            "tool_call_id": tool_id,
-            "name":         tool_name,
-            "content":      result_str,
-        }
-
-
 # ═══════════════════════════════════════════════════════════════════
 # MAIN ReAct LOOP
 # ═══════════════════════════════════════════════════════════════════
@@ -149,7 +114,7 @@ def run_react_agent(
     tools:       list[BaseTool],
     history:     Optional[list] = None,
     max_iter:    int = DEFAULT_MAX_ITER,
-    model:       str = "claude-3-5-sonnet",
+    model:       str = "claude-haiku-4-5",
 ) -> tuple[str, list[dict]]:
     """
     Run a ReAct agent loop.
@@ -179,37 +144,79 @@ def run_react_agent(
     final_text:     str                 = ""
 
     for iteration in range(max_iter):
+        # "thinking" type → replaces the single pulsing status bar in UI.
+        # Only used here at reasoning time, NOT for individual tool steps.
         publish(project_id, {
             "type":   "thinking",
             "role":   role,
-            "status": f"Reasoning (step {iteration + 1})..." if iteration == 0
-                      else f"Processing step {iteration + 1}...",
+            "status": "Reasoning..." if iteration == 0 else f"Thinking about next step...",
         })
 
         response = llm.chat_with_tools(messages, tools, max_tokens=8192, temperature=0)
 
+        # Detect "fake" tool calls from weak models
+        if not response.tool_calls and response.content:
+            _text = response.content
+            if any(tn in _text for tn in tool_map):
+                log.warning(
+                    "ReAct %s iter=%d: LLM returned tool names in plain text "
+                    "but no structured tool_calls — model may not support "
+                    "tool calling reliably. First 200 chars: %s",
+                    role, iteration, _text[:200],
+                )
+
         # ── Tool call(s) ──────────────────────────────────────────
         if response.tool_calls:
-            # Append assistant message with tool_calls for context
-            # (needed for Anthropic multi-turn tool use)
-            messages.append({
-                "role":    "assistant",
-                "content": response.content or "",
-            })
+            if provider == LLMProvider.ANTHROPIC:
+                content_blocks = []
+                if response.content:
+                    content_blocks.append({"type": "text", "text": response.content})
+                for tc in response.tool_calls:
+                    content_blocks.append({
+                        "type":  "tool_use",
+                        "id":    tc.get("id", f"call_{iteration}_{tc['name']}"),
+                        "name":  tc["name"],
+                        "input": tc["args"],
+                    })
+                messages.append({
+                    "role":    "assistant",
+                    "content": content_blocks,
+                })
+            else:
+                openai_tool_calls = []
+                for tc in response.tool_calls:
+                    openai_tool_calls.append({
+                        "id":       tc.get("id", f"call_{iteration}_{tc['name']}"),
+                        "type":     "function",
+                        "function": {
+                            "name":      tc["name"],
+                            "arguments": json.dumps(tc["args"]),
+                        },
+                    })
+                messages.append({
+                    "role":       "assistant",
+                    "content":    response.content or None,
+                    "tool_calls": openai_tool_calls,
+                })
+
+            anthropic_result_blocks: list[dict] = []
 
             for tc in response.tool_calls:
                 tool_name  = tc["name"]
                 tool_input = tc["args"]
                 tool_id    = tc.get("id", f"call_{iteration}_{tool_name}")
 
-                # Live thinking status
+                # "step" type → APPENDS a new entry to the timeline feed in UI.
+                # This is the KEY difference from "thinking" — each tool gets its
+                # own row in the Copilot-style step list, never replacing previous.
                 publish(project_id, {
-                    "type":   "thinking",
+                    "type":   "step",
                     "role":   role,
-                    "status": _thinking_msg(role, tool_name, tool_input, iteration + 1),
+                    "status": _step_msg(role, tool_name, tool_input, iteration + 1),
+                    "tool":   tool_name,
                 })
 
-                # Notify frontend of tool call
+                # Tool call detail — shown as expandable card in the feed
                 publish(project_id, {
                     "type":  "tool_call",
                     "role":  role,
@@ -229,12 +236,14 @@ def run_react_agent(
 
                 result_str = str(result)
 
-                # Stream result preview to frontend
+                # Tool result — shown below the tool_call card in the feed
                 publish(project_id, {
                     "type":   "tool_result",
                     "role":   role,
                     "tool":   tool_name,
                     "result": result_str[:500],
+                    # Indicate success/failure for UI coloring
+                    "is_error": result_str.startswith("❌"),
                 })
 
                 tool_calls_log.append({
@@ -243,16 +252,33 @@ def run_react_agent(
                     "output": result_str,
                 })
 
-                # Add tool result in the correct format for this provider
-                messages.append(
-                    _make_tool_result_message(provider, tool_id, tool_name, result_str)
-                )
+                if provider == LLMProvider.ANTHROPIC:
+                    anthropic_result_blocks.append({
+                        "type":        "tool_result",
+                        "tool_use_id": tool_id,
+                        "content":     result_str,
+                    })
+                else:
+                    messages.append({
+                        "role":         "tool",
+                        "tool_call_id": tool_id,
+                        "name":         tool_name,
+                        "content":      result_str,
+                    })
+
+            if provider == LLMProvider.ANTHROPIC and anthropic_result_blocks:
+                messages.append({
+                    "role":    "user",
+                    "content": anthropic_result_blocks,
+                })
 
         # ── Final text response ───────────────────────────────────
         else:
             final_text = response.content if isinstance(response.content, str) else ""
 
-            # Stream word by word
+            # Stream word by word so the frontend renders incrementally.
+            # Each publish is one word — the frontend appends chunk by chunk
+            # to inProgressMessage.text, giving the typewriter effect.
             words = final_text.split(" ")
             for i, word in enumerate(words):
                 publish(project_id, {
@@ -263,7 +289,6 @@ def run_react_agent(
             break
 
     else:
-        # Hit max_iter without a final response
         final_text = f"⚠️ Agent reached max iterations ({max_iter}). Stopping."
         publish(project_id, {
             "type":  "text_chunk",
