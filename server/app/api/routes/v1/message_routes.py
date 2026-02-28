@@ -3,37 +3,13 @@ api/routes/message_router.py
 
 Message endpoints for project chat + build pipeline.
 
-═══════════════════════════════════════════════════════════════════
-THE STREAMING FIX — EventSourceResponse replaces StreamingResponse
-═══════════════════════════════════════════════════════════════════
+FLOW:
+  POST /messages  — user sends a message → start or resume workflow
+  GET  /messages  — paginated chat history
+  GET  /messages/stream — SSE stream (EventSourceResponse for true per-event flush)
 
-The original used FastAPI's built-in StreamingResponse:
-
-    return StreamingResponse(
-        subscribe_and_stream(str(project_id)),
-        media_type="text/event-stream",
-        ...
-    )
-
-StreamingResponse does NOT flush each yielded chunk to the network
-immediately. It passes chunks to uvicorn's ASGI send() call, but
-uvicorn's HTTP/1.1 implementation may buffer them until the connection
-closes or the TCP buffer fills. Result: ALL events arrive at once.
-
-THE FIX: sse-starlette's EventSourceResponse
-
-    pip install sse-starlette
-
-EventSourceResponse is specifically designed for SSE. It calls
-send() with body_complete=False on every single yield, which forces
-uvicorn to flush that chunk immediately as a chunked-transfer-encoding
-HTTP frame. Each SSE event becomes its own TCP segment.
-
-This is the ONLY reliable way to get true per-event streaming with
-FastAPI + uvicorn. No hacks, no extra asyncio.sleep() calls needed.
-
-Install: pip install sse-starlette
-Docs:    https://github.com/sysid/sse-starlette
+Deployer fetches credentials internally from the User DB record.
+No env var form, no Railway connect flow, no deploy_confirm task.
 """
 
 from __future__ import annotations
@@ -44,8 +20,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-
-# THE FIX: import EventSourceResponse instead of using StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import get_current_user
@@ -59,7 +33,7 @@ from app.repositories.project_repo import ProjectRepo
 from app.schemas.enums import ACTION_TO_MESSAGE_TYPE, UserAction
 from app.schemas.message_schemas import SendMessageRequest
 from app.schemas.project_schemas import SendMessageResponse
-from app.tasks.build_worker import deploy_confirm_task, resume_workflow_task, start_workflow_task
+from app.tasks.build_worker import resume_workflow_task, start_workflow_task
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["messages"])
 log    = logging.getLogger(__name__)
@@ -118,22 +92,30 @@ async def get_messages(
         if b.get("type") == "artifact" and b.get("artifact_id")
     ]
     artifact_map = await ArtifactRepo(db).get_many_by_ids(artifact_ids)
+
+    # Active build first, fall back to latest (for deploy URL after completion)
     active_build = await BuildRepo(db).get_active_build(project_id)
+    if not active_build:
+        active_build = await BuildRepo(db).get_latest_build(project_id)
 
     return {
-        "messages":     [_serialise(m, artifact_map) for m in messages],
-        "total":        total,
-        "offset":       offset,
-        "has_more":     (offset + limit) < total,
+        "messages": [_serialise(m, artifact_map) for m in messages],
+        "total":    total,
+        "offset":   offset,
+        "has_more": (offset + limit) < total,
         "active_build": {
-            "id":     str(active_build.id),
-            "status": active_build.status,
+            "id":           str(active_build.id),
+            "status":       active_build.status,
+            "deploy_url":   active_build.deploy_url,
+            "repo_url":     active_build.repo_url,
+            "started_at":   active_build.started_at.isoformat() if active_build.started_at else None,
+            "completed_at": active_build.completed_at.isoformat() if active_build.completed_at else None,
         } if active_build else None,
     }
 
 
 # ════════════════════════════════════════════════════════════════════
-# POST /messages — unified entry point for ALL user interactions
+# POST /messages — send a chat message or trigger a build
 # ════════════════════════════════════════════════════════════════════
 
 @router.post("/messages", response_model=SendMessageResponse)
@@ -147,42 +129,6 @@ async def send_message(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # ── provide_env_vars ─────────────────────────────────────────────────────
-    if body.action == UserAction.PROVIDE_ENV_VARS:
-        if not body.vars:
-            raise HTTPException(
-                status_code=422,
-                detail="vars is required for provide_env_vars action",
-            )
-        active_build = await BuildRepo(db).get_active_build(project_id)
-        if not active_build:
-            raise HTTPException(status_code=409, detail="No active build waiting for deployment.")
-        if not project.langgraph_thread_id:
-            raise HTTPException(status_code=500, detail="No LangGraph thread ID on project.")
-
-        user_msg = await MessageRepo(db).create(
-            project_id   = project_id,
-            role         = "user",
-            message_type = "user_prompt",
-            content      = [{"type": "text", "content": "Submitted environment variables for deployment."}],
-        )
-        await db.commit()
-
-        deploy_confirm_task.delay(
-            project_id     = str(project_id),
-            thread_id      = project.langgraph_thread_id,
-            user_id        = str(current_user.id),
-            plaintext_vars = body.vars,
-        )
-
-        return {
-            "user_message_id": str(user_msg.id),
-            "thread_id":       project.langgraph_thread_id,
-            "status":          "deploying",
-            "stream_url":      f"/projects/{project_id}/messages/stream",
-        }
-
-    # ── send_message ─────────────────────────────────────────────────────────
     message_type = ACTION_TO_MESSAGE_TYPE.get(body.action)
     if not message_type:
         raise HTTPException(status_code=422, detail=f"Unknown action: {body.action}")
@@ -218,6 +164,7 @@ async def send_message(
         start_workflow_task.delay(
             project_id          = str(project_id),
             thread_id           = thread_id,
+            user_id             = str(current_user.id),
             user_message        = body.content or "",
             message_type        = message_type,
             project_name        = project.name,
@@ -227,6 +174,7 @@ async def send_message(
         resume_workflow_task.delay(
             project_id   = str(project_id),
             thread_id    = thread_id,
+            user_id      = str(current_user.id),
             user_message = body.content or "",
             message_type = message_type,
         )
@@ -242,11 +190,8 @@ async def send_message(
 # ════════════════════════════════════════════════════════════════════
 # GET /messages/stream — SSE endpoint
 #
-# Uses EventSourceResponse from sse-starlette (not StreamingResponse).
-# EventSourceResponse flushes each event immediately to the network.
-# StreamingResponse buffers until the connection closes — DO NOT use it.
-#
-# Install: pip install sse-starlette
+# EventSourceResponse (sse-starlette) flushes each event immediately.
+# StreamingResponse buffers until connection close — do NOT use it.
 # ════════════════════════════════════════════════════════════════════
 
 @router.get("/messages/stream")
@@ -260,29 +205,8 @@ async def stream_messages(
         raise HTTPException(status_code=404, detail="Project not found")
 
     async def event_generator():
-        """
-        Wraps subscribe_and_stream for sse-starlette.
-
-        subscribe_and_stream yields complete SSE strings: "data: {...}\\n\\n"
-        sse-starlette expects either:
-          - plain strings (it wraps them in "data: ...\\n\\n" itself), OR
-          - dicts with {"data": "...", "event": "...", "id": "..."}
-
-        Since our generator already produces fully-formatted SSE strings,
-        we strip the "data: " prefix and trailing "\\n\\n" so sse-starlette
-        can re-wrap them correctly. OR we use send_bytes mode.
-
-        Simplest approach: yield the raw JSON string — sse-starlette adds
-        the "data: " wrapper and flushes immediately.
-        """
         async for sse_frame in subscribe_and_stream(str(project_id)):
-            # sse_frame is "data: {...}\n\n" — strip wrapper so sse-starlette
-            # can re-add it properly with immediate flush
-            raw_json = sse_frame.removeprefix("data: ").rstrip("\n")
-            yield raw_json
+            # sse_frame is "data: {...}\n\n" — strip so sse-starlette re-wraps + flushes
+            yield sse_frame.removeprefix("data: ").rstrip("\n")
 
-    return EventSourceResponse(
-        event_generator(),
-        # sse-starlette sends a keep-alive ping every 15s automatically
-        ping=15,
-    )
+    return EventSourceResponse(event_generator(), ping=15)

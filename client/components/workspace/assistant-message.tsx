@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import type { Message } from "@/types/workflow";
+import type { Message, UserAction } from "@/types/workflow";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bot } from "lucide-react";
 import { MarkdownContent } from "./markdown-content";
@@ -9,9 +9,11 @@ import { ArtifactCard } from "./artifact-card";
 
 interface AssistantMessageProps {
   message: Message;
+  projectId?: string;
+  sendAction?: (action: UserAction) => void;
 }
 
-export function AssistantMessage({ message }: AssistantMessageProps) {
+export function AssistantMessage({ message, projectId, sendAction }: AssistantMessageProps) {
   return (
     <div className="py-2">
       {/* AI Avatar and Label at the top */}
@@ -48,6 +50,8 @@ export function AssistantMessage({ message }: AssistantMessageProps) {
                 artifactType={block.artifact_data.artifact_type}
                 title={block.artifact_data.title}
                 content={block.artifact_data.content}
+                projectId={projectId}
+                sendAction={sendAction}
               />
             );
           }

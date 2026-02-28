@@ -26,6 +26,9 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
+import type { UserAction } from "@/types/workflow";
+import type { ActiveBuild } from "@/store/workflow-store";
+
 interface WorkspaceHeaderProps {
     projectName?: string;
     isBuilding?: boolean;
@@ -33,6 +36,8 @@ interface WorkspaceHeaderProps {
     onTabChange?: (tab: string) => void;
     onDeploy?: () => void;
     onShare?: () => void;
+    sendAction?: (action: UserAction) => void;
+    activeBuild?: ActiveBuild | null;
 }
 
 export function WorkspaceHeader({
@@ -42,7 +47,14 @@ export function WorkspaceHeader({
     onTabChange,
     onDeploy,
     onShare,
+    sendAction,
+    activeBuild,
 }: WorkspaceHeaderProps) {
+    // Determine button state based on build status
+    const canDeploy = activeBuild?.status === "waiting_env" || activeBuild?.status === "building";
+    const isDeployed = activeBuild?.status === "completed" && activeBuild?.deploy_url;
+    const isDeploying = activeBuild?.status === "deploying";
+
     return (
         <header className="flex items-center justify-between h-14 px-4 border-b border-border bg-card/50 backdrop-blur-sm">
             {/* Left section - Project info */}
@@ -119,6 +131,61 @@ export function WorkspaceHeader({
                         </span>
                         Building...
                     </Badge>
+                )}
+
+                {/* Deploy button - show when build is ready for deployment */}
+                {/* {canDeploy && !isDeployed && ( */}
+                    {/* <Button
+                        variant="default"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => sendAction?.({ action: "provide_railway_key", railway_key : "0e0f2a7f-94cd-4a4f-b5e6-7d072b6e4097" })}
+                        disabled={isDeploying}
+                    >
+                        {isDeploying ? (
+                            <>
+                                <Activity className="h-4 w-4 animate-spin" />
+                                <span className="hidden sm:inline">Deploying...</span>
+                            </>
+                        ) : (
+                            <>
+                                <Rocket className="h-4 w-4" />
+                                <span className="hidden sm:inline">Connect Railway</span>
+                            </>
+                        )}
+                    </Button> */}
+                    {/* <Button
+                        variant="default"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => sendAction?.({ action: "provide_env_vars", vars : {} })}
+                        disabled={isDeploying}
+                    >
+                        {isDeploying ? (
+                            <>
+                                <Activity className="h-4 w-4 animate-spin" />
+                                <span className="hidden sm:inline">Deploying...</span>
+                            </>
+                        ) : (
+                            <>
+                                <Rocket className="h-4 w-4" />
+                                <span className="hidden sm:inline">send env</span>
+                            </>
+                        )}
+                    </Button> */}
+                    {/* )} */}
+
+                {/* Live button - show when deployment is complete */}
+                {isDeployed && activeBuild?.deploy_url && (
+                    <Button
+                        variant="default"
+                        size="sm"
+                        className="gap-2 bg-green-600 hover:bg-green-700"
+                        onClick={() => window.open(activeBuild.deploy_url!, '_blank')}
+                    >
+                        <Eye className="h-4 w-4" />
+                        <span className="hidden sm:inline">Live</span>
+                    </Button>
                 )}
 
                 <Button

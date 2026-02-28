@@ -31,7 +31,7 @@ import { Bot, Loader2 } from "lucide-react";
 import { StreamingMarkdown } from "./streaming-markdown";
 import { ArtifactCard } from "./artifact-card";
 import type { InProgressMessage } from "@/store/workflow-store";
-import type { StepFeedItem } from "@/types/workflow";
+import type { StepFeedItem, UserAction } from "@/types/workflow";
 import { StepFeed } from "../step-feed";
 
 interface StreamingMessageProps {
@@ -40,6 +40,8 @@ interface StreamingMessageProps {
   isThinking:        boolean;
   thinkingStatus:    string | null;
   stepFeed:          StepFeedItem[];
+  projectId?:        string;
+  sendAction?:       (action: UserAction) => void;
 }
 
 export const StreamingMessage = memo(function StreamingMessage({
@@ -48,6 +50,8 @@ export const StreamingMessage = memo(function StreamingMessage({
   isThinking,
   thinkingStatus,
   stepFeed,
+  projectId,
+  sendAction,
 }: StreamingMessageProps) {
   const { role, text, artifact } = inProgressMessage;
   const hasText     = text.trim().length > 0;
@@ -128,6 +132,8 @@ export const StreamingMessage = memo(function StreamingMessage({
                 artifactType={artifact.artifact_type}
                 title={artifact.title}
                 content={artifact.content}
+                projectId={projectId}
+                sendAction={sendAction}
               />
             )}
 

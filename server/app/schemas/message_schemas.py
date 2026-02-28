@@ -46,12 +46,14 @@ class SendMessageRequest(BModel):
     """
     Schema for sending a user action.
 
-    Pipeline v2 — only two actions:
-      action              | content     | vars
-      ─────────────────────┼─────────────┼─────────────
-      send_message        | required    |
-      provide_env_vars    |             | required
+    Pipeline v2 — three actions:
+      action                | content     | vars       | railway_key
+      ──────────────────────┼─────────────┼────────────┼────────────
+      send_message          | required    |            |
+      provide_env_vars      |             | required   |
+      provide_railway_key   |             |            | required
     """
     action: UserAction
     content: Optional[str] = ""
-    vars: Optional[dict] = None  # Only for provide_env_vars action
+    vars: Optional[dict] = None         # Only for provide_env_vars action
+    railway_key: Optional[str] = None   # Only for provide_railway_key action

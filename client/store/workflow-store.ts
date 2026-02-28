@@ -42,6 +42,15 @@ export interface InProgressMessage {
   } | null;
 }
 
+export interface ActiveBuild {
+  id: string;
+  status: string;
+  deploy_url: string | null;
+  repo_url: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 interface WorkflowStore {
   // ── Committed messages (history + finished streamed messages)
   messages: Message[];
@@ -51,6 +60,9 @@ interface WorkflowStore {
   active_role:  string | null;
   is_streaming: boolean;
   error:        string | null;
+
+  // ── Active build tracking
+  activeBuild: ActiveBuild | null;
 
   // ── Interim loading state (between message sent and workflow start)
   isPendingWorkflowStart: boolean;
@@ -71,6 +83,7 @@ interface WorkflowStore {
   confirmOptimisticMessage: (tempId: string, realId: string) => void;
   removeOptimisticMessage:  (tempId: string) => void;
   setWorkflowPending:       (pending: boolean) => void;
+  setActiveBuild:           (build: ActiveBuild | null) => void;
   handleSSEEvent:           (event: SSEEvent) => void;
   reset:                    () => void;
 }
@@ -83,6 +96,7 @@ const INITIAL_STATE = {
   active_role:           null as string | null,
   is_streaming:          false,
   error:                 null as string | null,
+  activeBuild:           null as ActiveBuild | null,
   isPendingWorkflowStart: false,
   isThinking:            false,
   thinkingStatus:        null as string | null,
@@ -154,6 +168,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     set({ isPendingWorkflowStart: pending });
   },
 
+  setActiveBuild: (build: ActiveBuild | null) => {
+    set({ activeBuild: build });
+  },
+
   /**
    * STABLE function — reads state via get(), never closes over stale state.
    * Store in a useRef in the hook. Reference never changes.
@@ -182,12 +200,31 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     switch (event.type) {
 
       // ── Stage transitions ─────────────────────────────────────
-      case "stage_change":
+      case "stage_change": {
         set({ stage: event.stage, error: null });
         if (event.stage === "building") {
           useRightSidebar.getState().showCode();
         }
+
+        // Keep activeBuild.status in sync with SSE stage changes
+        const stageToStatus: Record<string, string> = {
+          building:    "building",
+          waiting_env: "waiting_env",
+          deploying:   "deploying",
+          complete:    "completed",
+          error:       "failed",
+        };
+        const mappedStatus = stageToStatus[event.stage];
+        if (mappedStatus) {
+          const currentBuild = get().activeBuild;
+          if (currentBuild) {
+            set({
+              activeBuild: { ...currentBuild, status: mappedStatus },
+            });
+          }
+        }
         break;
+      }
 
       // ── Thinking (replaces single status bar) ─────────────────
       case "thinking":
@@ -317,7 +354,10 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
         set((s) => ({
           inProgressMessage: s.inProgressMessage
             ? { ...s.inProgressMessage, artifact: artifactData }
-            : { role: "system", text: "", artifact: artifactData },
+            // Use "deployer" as the fallback role so that commitInProgress
+            // produces a message that ChatMessageItem routes to AssistantMessage
+            // (which renders ArtifactCard). "system" was silently dropped.
+            : { role: s.active_role ?? "deployer", text: "", artifact: artifactData },
         }));
         break;
       }
@@ -347,9 +387,21 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           };
         });
 
+        // Update activeBuild with deploy_url/repo_url from the done event
         const doneEvent = event as SSEEvent & { deploy_url?: string; repo_url?: string };
-        if (doneEvent.deploy_url) {
-          // useRightSidebar.getState().setDeployUrl?.(doneEvent.deploy_url, doneEvent.repo_url);
+        if (doneEvent.deploy_url || doneEvent.repo_url) {
+          const currentBuild = get().activeBuild;
+          if (currentBuild) {
+            set({
+              activeBuild: {
+                ...currentBuild,
+                status:       "completed",
+                deploy_url:   doneEvent.deploy_url ?? currentBuild.deploy_url,
+                repo_url:     doneEvent.repo_url ?? currentBuild.repo_url,
+                completed_at: new Date().toISOString(),
+              },
+            });
+          }
         }
         break;
       }
@@ -357,7 +409,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       // ── Close stream (entire workflow complete) ───────────────
       case "close_stream":
         set((s) => ({
-          stage: (["thinking", "building", "testing", "fixing", "deploying"] as WorkflowStage[])
+          stage: (["thinking", "building", "deploying"] as WorkflowStage[])
             .includes(s.stage) && !["waiting_env", "complete", "error"].includes(s.stage)
             ? "idle"
             : s.stage,

@@ -14,8 +14,6 @@ export type WorkflowStage =
   | "idle"
   | "thinking"
   | "building"
-  | "testing"
-  | "fixing"
   | "deploying"
   | "waiting_env"
   | "complete"
@@ -90,8 +88,9 @@ export interface Message {
 // ─── User Actions ─────────────────────────────────────────────────────────────
 
 export type UserAction =
-  | { action: "send_message";     content: string }
-  | { action: "provide_env_vars"; vars: Record<string, string> };
+  | { action: "send_message";        content: string }
+  | { action: "provide_env_vars";    vars: Record<string, string> }
+  | { action: "provide_railway_key"; railway_key: string };
 
 // ─── API response types ───────────────────────────────────────────────────────
 
@@ -100,7 +99,14 @@ export interface MessagesResponse {
   total:        number;
   offset:       number;
   has_more:     boolean;
-  active_build: { id: string; status: string } | null;
+  active_build: {
+    id:           string;
+    status:       string;
+    deploy_url:   string | null;
+    repo_url:     string | null;
+    started_at:   string | null;
+    completed_at: string | null;
+  } | null;
 }
 
 export interface SendMessageResponse {

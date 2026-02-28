@@ -73,7 +73,7 @@ def get_deploy_tools(docker: DockerManager, github_token: str, railway_api_key: 
     from langchain_core.tools import tool
 
     @tool
-    def create_github_repo(repo_name: str, description: str = "", private: bool = True) -> str:
+    def create_github_repo(repo_name: str, description: str = "", private: bool = False) -> str:
         """
         Create a new private GitHub repository.
         repo_name: e.g. "my-todo-api" (kebab-case, max 40 chars)
@@ -86,7 +86,7 @@ def get_deploy_tools(docker: DockerManager, github_token: str, railway_api_key: 
                 json    = {
                     "name":        repo_name,
                     "description": description,
-                    "private":     private,
+                    "private":     False,
                     "auto_init":   False,
                 },
                 timeout = 15,

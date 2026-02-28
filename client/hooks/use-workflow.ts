@@ -73,6 +73,7 @@ export function useWorkflow(projectId: string) {
   const confirmOptimisticMessage = useWorkflowStore((s) => s.confirmOptimisticMessage);
   const removeOptimisticMessage  = useWorkflowStore((s) => s.removeOptimisticMessage);
   const setWorkflowPending       = useWorkflowStore((s) => s.setWorkflowPending);
+  const setActiveBuild           = useWorkflowStore((s) => s.setActiveBuild);
   const reset                    = useWorkflowStore((s) => s.reset);
 
   // ── Rendered state (optimized selectors for performance) ───────────────────
@@ -85,6 +86,7 @@ export function useWorkflow(projectId: string) {
   const stepFeed             = useWorkflowStore((s) => s.stepFeed);
   const error                = useWorkflowStore((s) => s.error);
   const isPendingWorkflowStart = useWorkflowStore((s) => s.isPendingWorkflowStart);
+  const activeBuild          = useWorkflowStore((s) => s.activeBuild);
   
   // CRITICAL: Separate selector for streaming text to maximize performance
   const inProgressMessage = useWorkflowStore((s) => s.inProgressMessage);
@@ -106,14 +108,33 @@ export function useWorkflow(projectId: string) {
   // Seed Zustand once when TQ gets fresh history
   const historyData = queryClient.getQueryData<{
     messages: Message[];
-    active_build?: { status: string };
+    active_build?: { 
+      id: string;
+      status: string;
+      deploy_url?: string | null;
+      repo_url?: string | null;
+      started_at?: string | null;
+      completed_at?: string | null;
+    };
   }>(workflowKeys.messages(projectId));
 
   useEffect(() => {
     if (historyData?.messages) {
       hydrateMessages(historyData.messages);
     }
-  }, [historyData, hydrateMessages]);
+    if (historyData?.active_build) {
+      setActiveBuild({
+        id: historyData.active_build.id,
+        status: historyData.active_build.status,
+        deploy_url: historyData.active_build.deploy_url ?? null,
+        repo_url: historyData.active_build.repo_url ?? null,
+        started_at: historyData.active_build.started_at ?? null,
+        completed_at: historyData.active_build.completed_at ?? null,
+      });
+    } else {
+      setActiveBuild(null);
+    }
+  }, [historyData, hydrateMessages, setActiveBuild]);
 
   // Restore stage on page reload mid-build
   useEffect(() => {
@@ -124,8 +145,6 @@ export function useWorkflow(projectId: string) {
       building:    "building",
       running:     "building",
       thinking:    "thinking",
-      testing:     "testing",
-      fixing:      "fixing",
       deploying:   "deploying",
       waiting_env: "waiting_env",
     };
@@ -305,6 +324,7 @@ export function useWorkflow(projectId: string) {
     isHistoryError,
     isSending: sendMutation.isPending,
     isPendingWorkflowStart,
+    activeBuild,
     sendAction: (action: UserAction) => {
       ensureSSEConnected();
       sendMutation.mutate(action);

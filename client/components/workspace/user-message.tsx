@@ -3,7 +3,7 @@
 import React from "react";
 import type { Message } from "@/types/workflow";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User } from "lucide-react";
+import { User, Rocket } from "lucide-react";
 
 interface UserMessageProps {
   message: Message;
@@ -18,6 +18,9 @@ export function UserMessage({ message }: UserMessageProps) {
 
   if (!textContent) return null;
 
+  // Check if this is an env vars submission message
+  const isEnvVarSubmission = textContent.includes("environment variables for deployment");
+
   return (
     <div className="py-2 flex flex-col items-end max-w-[75%] ml-auto">
       {/* User Avatar and Label at the top */}
@@ -31,8 +34,13 @@ export function UserMessage({ message }: UserMessageProps) {
       </div>
 
       {/* Message Content */}
-      <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-3 py-2">
-        <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-break-word">
+      <div className={`rounded-2xl rounded-tr-sm px-3 py-2 ${
+        isEnvVarSubmission 
+          ? "bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/20" 
+          : "bg-primary text-primary-foreground"
+      }`}>
+        <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-break-word flex items-center gap-2">
+          {isEnvVarSubmission && <Rocket className="size-3.5 shrink-0" />}
           {textContent}
         </p>
       </div>

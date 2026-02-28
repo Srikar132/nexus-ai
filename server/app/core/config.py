@@ -31,9 +31,6 @@ class Settings(BaseSettings):
     DOCKER_NETWORK: str = "aibuild_network"
     DOCKER_BASE_IMAGE: str = "python:3.11-slim"
 
-
-    MAX_SECURITY_ITERATIONS: int = 5   # max guardian↔artificer loops before giving up
-
     
     class Config:
         env_file = ".env"

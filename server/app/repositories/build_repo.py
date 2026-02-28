@@ -53,21 +53,34 @@ class BuildRepo:
     ) -> Optional[Build]:
         """
         Get the active (non-completed/non-failed) build for a project.
+        Statuses: building, waiting_env, deploying.
         """
         r = await self.db.execute(
             select(Build)
             .where(
                 Build.project_id == project_id,
                 Build.status.in_([
-                    "planning",
-                    "waiting_approval",
-                    "approved",
                     "building",
-                    "security_testing",
-                    "fixing",
-                    "deploying"
+                    "waiting_env",
+                    "deploying",
                 ])
             )
+            .order_by(desc(Build.created_at))
+            .limit(1)
+        )
+        return r.scalar_one_or_none()
+
+    async def get_latest_build(
+        self,
+        project_id: uuid.UUID
+    ) -> Optional[Build]:
+        """
+        Get the most recent build for a project regardless of status.
+        Used to show Live button after deployment completes (status=completed, deploy_url set).
+        """
+        r = await self.db.execute(
+            select(Build)
+            .where(Build.project_id == project_id)
             .order_by(desc(Build.created_at))
             .limit(1)
         )

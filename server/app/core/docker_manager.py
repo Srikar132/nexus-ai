@@ -13,7 +13,7 @@ KEY FIXES vs original:
 
   2. run_config serialization for cross-node reattach — run_config is stored
      as a dict in the Build row (or passed explicitly). reattach() now accepts
-     a plain dict and reconstructs RunConfig so Guardian/Deployer can restart
+     a plain dict and reconstructs RunConfig so Deployer can restart
      the app after artificer_fix without losing run_config.
 
   3. start_app() returns the host-accessible URL using self.app_port (the

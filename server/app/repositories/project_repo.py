@@ -174,3 +174,16 @@ class ProjectRepo:
         )
         await self.db.flush()
         return result.rowcount > 0
+
+    def get_by_id_sync(self, project_id: uuid.UUID | str) -> Optional[Project]:
+        """
+        Synchronous version of get_by_id.
+        Used in celery tasks where we already have a sync session.
+        """
+        if isinstance(project_id, str):
+            project_id = uuid.UUID(project_id)
+        
+        result = self.db.execute(
+            select(Project).where(Project.id == project_id)
+        )
+        return result.scalar_one_or_none()

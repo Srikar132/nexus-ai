@@ -3,15 +3,15 @@ tools/docker_tools.py
 
 Tools given to the Artificer agent.
 
-Design decision on start_app:
-  start_app is NOT a tool here. The agent uses exec_command() to run
-  install + start commands itself (it knows the commands from the plan).
-  After the ReAct loop finishes, the artificer_node calls docker.start_app()
-  exactly once to get the URL for Guardian. This avoids double-start conflicts.
-
-  The agent CAN still check logs with get_app_logs() and restart manually
-  with exec_command("pkill uvicorn && nohup uvicorn ...") if something fails.
+Design principles:
+  - NO hardcoded framework logic. The agent reasons about everything.
+  - Tools are thin wrappers around DockerManager — they give the agent
+    eyes and hands inside the container, but the agent decides what to do.
+  - `emit_run_config` is a proper tool call (not echo-parsing).
+  - `analyse_env_vars` inspects the actual code to determine what env vars
+    the app needs — no keyword guessing.
 """
+import json
 import os
 from langchain_core.tools import tool
 from app.core.docker_manager import DockerManager
@@ -110,7 +110,6 @@ def get_docker_tools(docker: DockerManager) -> list:
             return f"❌ {path} — syntax error:\n{output}"
 
         elif ext in (".js", ".ts", ".jsx", ".tsx"):
-            # Use node --check for JS, tsc --noEmit for TS if available
             if ext in (".ts", ".tsx"):
                 exit_code, output = docker.exec(
                     f"npx tsc --noEmit /workspace/{path} 2>&1 || node --check /workspace/{path} 2>&1 && echo 'SYNTAX_OK'"
@@ -150,6 +149,109 @@ def get_docker_tools(docker: DockerManager) -> list:
         except Exception as e:
             return f"❌ Error deleting {path}: {e}"
 
+    @tool
+    def emit_run_config(
+        install_command: str,
+        start_command: str,
+        health_check_path: str = "/health",
+        startup_wait_secs: int = 8,
+    ) -> str:
+        """
+        Register the application's run configuration with the system.
+        You MUST call this as the FINAL step after all files are written,
+        dependencies installed, syntax checked, and Swagger integrated.
+
+        The system uses this config to start and health-check the app.
+        Without calling this tool, the application CANNOT be started.
+
+        Args:
+            install_command: Command to install dependencies (e.g. "pip install -r requirements.txt")
+            start_command: Command to start the application (e.g. "uvicorn main:app --host 0.0.0.0 --port 8080")
+            health_check_path: HTTP path that returns 200 when app is ready (e.g. "/health")
+            startup_wait_secs: Seconds to wait for the app to start before health check (e.g. 8)
+        """
+        config = {
+            "install_command":   install_command,
+            "start_command":     start_command,
+            "health_check_path": health_check_path,
+            "startup_wait_secs": startup_wait_secs,
+        }
+        # Store on the docker manager so the node can retrieve it
+        docker._run_config_from_tool = config
+        return (
+            f"✅ Run config registered:\n"
+            f"  install: {install_command}\n"
+            f"  start:   {start_command}\n"
+            f"  health:  {health_check_path}\n"
+            f"  wait:    {startup_wait_secs}s"
+        )
+
+    @tool
+    def analyse_env_vars() -> str:
+        """
+        Analyse the application source code in /workspace to determine what
+        environment variables the app reads at runtime.
+
+        Scans source files for patterns like os.environ, os.getenv, process.env,
+        config references, .env file templates, etc. and returns a list of
+        environment variable names the app expects.
+
+        Call this after all source code is written so the analysis is complete.
+        """
+        try:
+            files = docker.list_files()
+            if not files:
+                return "No files in workspace — nothing to analyse."
+
+            # Use grep to find env var references across all source files
+            patterns = [
+                "os\\.environ",
+                "os\\.getenv",
+                "process\\.env",
+                "ENV\\[",
+                "System\\.getenv",
+                "os\\.Getenv",
+                "viper\\.Get",
+                "\\$\\{[A-Z_]+\\}",
+            ]
+            grep_pattern = "|".join(patterns)
+            exit_code, output = docker.exec(
+                f"grep -rn -E '{grep_pattern}' /workspace/ "
+                f"--include='*.py' --include='*.js' --include='*.ts' "
+                f"--include='*.go' --include='*.java' --include='*.rb' "
+                f"--include='*.env*' --include='*.yml' --include='*.yaml' "
+                f"--include='*.toml' --include='*.cfg' "
+                f"2>/dev/null || echo 'NO_MATCHES'"
+            )
+
+            # Also check for .env.example or .env.template
+            env_exit, env_out = docker.exec(
+                "cat /workspace/.env.example 2>/dev/null || "
+                "cat /workspace/.env.template 2>/dev/null || "
+                "cat /workspace/.env.sample 2>/dev/null || "
+                "echo 'NO_ENV_TEMPLATE'"
+            )
+
+            result_parts = []
+            if output.strip() and output.strip() != "NO_MATCHES":
+                result_parts.append(
+                    "=== Environment variable references found in source code ===\n"
+                    f"{output.strip()}"
+                )
+            else:
+                result_parts.append("No environment variable references found in source code.")
+
+            if env_out.strip() and env_out.strip() != "NO_ENV_TEMPLATE":
+                result_parts.append(
+                    "\n=== .env template file found ===\n"
+                    f"{env_out.strip()}"
+                )
+
+            return "\n\n".join(result_parts)
+
+        except Exception as e:
+            return f"❌ analyse_env_vars failed: {e}"
+
     return [
         exec_command,
         write_file,
@@ -158,4 +260,6 @@ def get_docker_tools(docker: DockerManager) -> list:
         check_syntax,
         get_app_logs,
         delete_file,
+        emit_run_config,
+        analyse_env_vars,
     ]

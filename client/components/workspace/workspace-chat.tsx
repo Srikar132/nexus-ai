@@ -67,7 +67,7 @@ const WorkspaceChat = ({
     stepFeed.length === 0;
 
   const isBusy = isSending || is_streaming || isThinking || isPendingWorkflowStart ||
-    ["building", "testing", "fixing", "deploying"].includes(stage);
+    ["building", "deploying"].includes(stage);
 
   return (
     <aside className="w-full h-full overflow-hidden flex flex-col">
@@ -89,7 +89,7 @@ const WorkspaceChat = ({
 
           {/* Committed history */}
           {messages.map((message) => (
-            <ChatMessageItem key={message.id} message={message} />
+            <ChatMessageItem key={message.id} message={message} projectId={projectId} sendAction={sendAction} />
           ))}
 
           {/* Interim loading state - between message sent and workflow start */}
@@ -113,6 +113,8 @@ const WorkspaceChat = ({
               isThinking={isThinking}
               thinkingStatus={thinkingStatus}
               stepFeed={stepFeed}
+              projectId={projectId}
+              sendAction={sendAction}
             />
           ) : isThinking && thinkingStatus ? (
             /* Thinking before agent_start — minimal indicator */

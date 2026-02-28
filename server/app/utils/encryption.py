@@ -16,3 +16,5 @@ def decrypt_token(encrypted_token: str) -> str:
     if not encrypted_token:
         return ""
     return cipher.decrypt(encrypted_token.encode()).decode()
+
+

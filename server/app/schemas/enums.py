@@ -16,8 +16,6 @@ class WorkflowStage(str, Enum):
     IDLE        = "idle"           # No workflow running yet
     THINKING    = "thinking"       # Conductor is analysing the request
     BUILDING    = "building"       # Artificer is writing code
-    TESTING     = "testing"        # Guardian is running security checks
-    FIXING      = "fixing"         # Artificer is fixing issues found by Guardian
     DEPLOYING   = "deploying"      # Deployer is running
     WAITING_ENV = "waiting_env"    # Deployer waiting for user env vars
     COMPLETE    = "complete"       # Done
@@ -26,10 +24,11 @@ class WorkflowStage(str, Enum):
 
 class UserAction(str, Enum):
     """
-    Only two user actions now.  The backend NEVER infers intent from text.
+    Three user actions.  The backend NEVER infers intent from text.
     """
-    SEND_MESSAGE     = "send_message"      # Regular chat / build request
-    PROVIDE_ENV_VARS = "provide_env_vars"  # Deploy env vars form
+    SEND_MESSAGE        = "send_message"        # Regular chat / build request
+    PROVIDE_ENV_VARS    = "provide_env_vars"     # Deploy env vars form
+    PROVIDE_RAILWAY_KEY = "provide_railway_key"  # Railway API token from inline card
 
 
 class MessageType(str, Enum):

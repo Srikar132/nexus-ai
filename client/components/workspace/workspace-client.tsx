@@ -31,6 +31,7 @@ const WorkspaceClient = ({ initialProject }: WorkspaceClientProps) => {
     isHistoryError,
     isSending,
     isPendingWorkflowStart,
+    activeBuild,
     sendAction,
   } = useWorkflow(initialProject.id);
 
@@ -62,11 +63,13 @@ const WorkspaceClient = ({ initialProject }: WorkspaceClientProps) => {
     <>
       <WorkspaceHeader
         projectName={initialProject.name}
-        isBuilding={["building", "thinking", "testing", "fixing"].includes(stage)}
+        isBuilding={["building", "thinking"].includes(stage)}
         activeTab={currentState}
         onTabChange={handleTabChange}
         onDeploy={() => console.log("Deploy")}
         onShare={() => console.log("Share")}
+        sendAction={sendAction}
+        activeBuild={activeBuild}
       />
 
       <div style={{ height: "calc(100vh - 56px)" }}>
