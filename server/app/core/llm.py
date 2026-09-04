@@ -371,40 +371,40 @@ class UnifiedLLM:
         # Groq models
         "llama-3.1-70b": LLMConfig(
             provider=LLMProvider.GROQ,
-            model="llama-3.1-70b-versatile",
+            model="groq/compound",
             api_key=settings.GROQ_API_KEY,
             max_tokens=4096,
             temperature=0.0
         ),
         "llama-3.1-8b": LLMConfig(
             provider=LLMProvider.GROQ,
-            model="llama-3.1-8b-instant",
+            model="groq/compound-mini",
             api_key=settings.GROQ_API_KEY,
             max_tokens=4096,
             temperature=0.0
         ),
         "mixtral-8x7b": LLMConfig(
             provider=LLMProvider.GROQ,
-            model="mixtral-8x7b-32768",
+            model="qwen/qwen3.6-27b",
             api_key=settings.GROQ_API_KEY,
             max_tokens=8192,
             temperature=0.0
         ),
         "gemma2-9b": LLMConfig(
             provider=LLMProvider.GROQ,
-            model="gemma2-9b-it",
+            model="allam-2-7b",
             api_key=settings.GROQ_API_KEY,
             max_tokens=4096,
             temperature=0.0
         )
     }
     
-    def __init__(self, model_name: str = "claude-3-5-sonnet"):
+    def __init__(self, model_name: str = "llama-3.1-8b"):
         """
         Initialize with a model name from MODELS dict.
         
         Args:
-            model_name: Key from MODELS dict (e.g., "claude-3-5-sonnet", "gpt-4o")
+            model_name: Key from MODELS dict (e.g., "llama-3.1-8b", "gpt-4o", "claude-3-5-sonnet")
         """
         if model_name not in self.MODELS:
             available = ", ".join(self.MODELS.keys())
@@ -517,19 +517,19 @@ class UnifiedLLM:
 
 
 # Convenience functions for common use cases
-def get_llm(model: str = "claude-3-5-sonnet") -> UnifiedLLM:
+def get_llm(model: str = "llama-3.1-8b") -> UnifiedLLM:
     """Get a UnifiedLLM instance with specified model"""
     return UnifiedLLM(model)
 
 
-def chat(prompt: str, model: str = "claude-3-5-sonnet", **kwargs) -> str:
+def chat(prompt: str, model: str = "llama-3.1-8b", **kwargs) -> str:
     """Quick chat function - returns just the text content"""
     llm = get_llm(model)
     response = llm.chat(prompt, **kwargs)
     return response.content
 
 
-def chat_stream(prompt: str, model: str = "claude-3-5-sonnet", **kwargs) -> Iterator[str]:
+def chat_stream(prompt: str, model: str = "llama-3.1-8b", **kwargs) -> Iterator[str]:
     """Quick streaming chat - yields text content only"""
     llm = get_llm(model)
     for chunk in llm.chat_stream(prompt, **kwargs):

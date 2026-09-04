@@ -11,7 +11,8 @@ docker-compose up -d redis
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host "✓ Redis started successfully" -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "✗ Failed to start Redis" -ForegroundColor Red
     exit 1
 }

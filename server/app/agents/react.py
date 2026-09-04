@@ -11,10 +11,10 @@ KEY FIXES vs original:
      Now provider-aware: Anthropic gets proper tool_result blocks;
      OpenAI/Groq get the plain-text user message format.
 
-  2. Model defaulted to "claude-3-5-sonnet" (reliable tool-calling).
-     "llama-3.3-70b" was referenced in workflow.py but doesn't exist in
-     the MODELS registry. All agent calls now use claude-3-5-sonnet which
-     has excellent tool use. Pass model= explicitly to override per node.
+  2. Model defaulted to "llama-3.1-8b" (Groq, reliable tool-calling).
+      "llama-3.3-70b" was referenced in workflow.py but doesn't exist in
+      the MODELS registry. All agent calls now use llama-3.1-8b which
+      has excellent tool use. Pass model= explicitly to override per node.
 
   3. thinking status published with correct agent role on every step.
 
@@ -149,7 +149,7 @@ def run_react_agent(
     tools:       list[BaseTool],
     history:     Optional[list] = None,
     max_iter:    int = DEFAULT_MAX_ITER,
-    model:       str = "claude-3-5-sonnet",
+    model:       str = "llama-3.1-8b",
 ) -> tuple[str, list[dict]]:
     """
     Run a ReAct agent loop.
